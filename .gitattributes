@@ -1,0 +1,2 @@
+# Keep the vendored Microsoft snapshot byte-for-byte compatible with upstream.
+src/LocalCam.VirtualCamera/vendor/Windows-Camera/** -whitespace

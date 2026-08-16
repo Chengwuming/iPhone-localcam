@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationIcon>Assets\LocalCam.ico</ApplicationIcon>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <Resource Include="Assets\LocalCam.ico" />
+    <ProjectReference Include="..\..\..\src\LocalCam.Contracts\LocalCam.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\src\LocalCam.Server\LocalCam.Server.csproj" />
+    <ProjectReference Include="..\..\..\src\LocalCam.Updates\LocalCam.Updates.csproj" />
+    <AssemblyMetadata Include="GitHubRepository" Value="$(GitHubRepository)" Condition="'$(GitHubRepository)' != ''" />
+  </ItemGroup>
+  <ItemGroup Condition="Exists('..\..\..\artifacts\virtual-camera\live\LocalCamVirtualCameraRegistrar.exe')">
+    <Content Include="..\..\..\artifacts\virtual-camera\live\LocalCamVirtualCameraRegistrar.exe" Link="VirtualCamera\LocalCamVirtualCameraRegistrar.exe" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\..\artifacts\virtual-camera\live\LocalCamMediaSource.dll" Link="VirtualCamera\LocalCamMediaSource.dll" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

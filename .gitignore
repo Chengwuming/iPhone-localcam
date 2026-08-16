@@ -1,0 +1,26 @@
+bin/
+obj/
+.vs/
+*.user
+*.suo
+artifacts/
+*.pfx
+*.p12
+*.key
+*.pem
+
+# Local native diagnostics are generated from source.
+src/LocalCam.VirtualCamera/VirtualCameraCapabilityProbe.exe
+
+# Temporary safety copy used while flattening the Microsoft sample source.
+src/LocalCam.VirtualCamera/vendor/Windows-Camera/.git.local-backup/
+
+# Only the Microsoft Media Source baseline is vendored for LocalCam builds.
+src/LocalCam.VirtualCamera/vendor/Windows-Camera/Samples/VirtualCamera/Scripts/
+src/LocalCam.VirtualCamera/vendor/Windows-Camera/Samples/VirtualCamera/VirtualCamera_Installer/
+src/LocalCam.VirtualCamera/vendor/Windows-Camera/Samples/VirtualCamera/VirtualCamera_MSI/
+src/LocalCam.VirtualCamera/vendor/Windows-Camera/Samples/VirtualCamera/VirtualCameraManager_App/
+src/LocalCam.VirtualCamera/vendor/Windows-Camera/Samples/VirtualCamera/VirtualCameraManager_WinRT/
+src/LocalCam.VirtualCamera/vendor/Windows-Camera/Samples/VirtualCamera/VirtualCameraSystray/
+src/LocalCam.VirtualCamera/vendor/Windows-Camera/Samples/VirtualCamera/VirtualCameraTest/
+src/LocalCam.VirtualCamera/vendor/Windows-Camera/Samples/VirtualCamera/VirtualCameraSample.sln
