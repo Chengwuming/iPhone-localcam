@@ -1,0 +1,62 @@
+name: build-full-baseline
+
+# Full upstream build (baseline A/B reproduction): native virtual camera
+# components + self-contained Desktop app. No code modifications - the only
+# file this branch adds on top of upstream is this workflow.
+# Artifact layout matches the bundled layout VirtualCameraSessionService
+# expects: <publish>/VirtualCamera/{registrar,probe,dll}
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore NuGet packages (media source)
+        run: msbuild "src\LocalCam.VirtualCamera\vendor\Windows-Camera\Samples\VirtualCamera\VirtualCameraMediaSource\VirtualCameraMediaSource.vcxproj" /t:Restore /p:RestorePackagesConfig=true
+
+      - name: Build media source DLL (x64 Release)
+        run: msbuild "src\LocalCam.VirtualCamera\vendor\Windows-Camera\Samples\VirtualCamera\VirtualCameraMediaSource\VirtualCameraMediaSource.vcxproj" /p:Configuration=Release /p:Platform=x64 /m
+
+      - name: Build registrar + capability probe (CMake)
+        run: |
+          cmake -S src/LocalCam.VirtualCamera -B artifacts/native-build -G "Visual Studio 17 2022" -A x64
+          cmake --build artifacts/native-build --config Release --parallel
+
+      - name: Collect native components
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts/virtual-camera/live | Out-Null
+          Copy-Item "src/LocalCam.VirtualCamera/vendor/Windows-Camera/Samples/VirtualCamera/VirtualCameraMediaSource/x64/Release/VirtualCameraMediaSource.dll" artifacts/virtual-camera/live/LocalCamMediaSource.dll
+          Copy-Item "artifacts/native-build/Release/LocalCamVirtualCameraRegistrar.exe" artifacts/virtual-camera/live/
+          Copy-Item "artifacts/native-build/Release/LocalCamVirtualCameraCapabilityProbe.exe" artifacts/virtual-camera/live/
+          Get-ChildItem artifacts/virtual-camera/live | Format-Table Name, Length
+
+      - name: Publish desktop app (self-contained win-x64)
+        run: dotnet publish apps/desktop/LocalCam.Desktop/LocalCam.Desktop.csproj -c Release -r win-x64 --self-contained true -o publish /p:DebugType=None /p:DebugSymbols=false /p:GitHubRepository=Chengwuming/iphone-localcam
+
+      - name: Bundle VirtualCamera into publish
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force publish/VirtualCamera | Out-Null
+          Copy-Item artifacts/virtual-camera/live/* publish/VirtualCamera/
+          Get-ChildItem publish -Directory | Select-Object -First 5 Name
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: localcam-baseline-win-x64
+          path: publish/
+          if-no-files-found: error
