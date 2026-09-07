@@ -7,6 +7,7 @@ LocalCam includes modified source from Microsoft's `Windows-Camera` samples.
 - LocalCam-modified files:
   - `Samples/VirtualCamera/VirtualCameraMediaSource/SimpleFrameGenerator.cpp`
   - `Samples/VirtualCamera/VirtualCameraMediaSource/SimpleFrameGenerator.h`
+  - `Samples/VirtualCamera/VirtualCameraMediaSource/SimpleMediaStream.cpp`
   - `Samples/VirtualCamera/VirtualCameraMediaSource/VirtualCameraMediaSource.vcxproj`
 - License: [Microsoft Windows-Camera MIT license](src/LocalCam.VirtualCamera/vendor/Windows-Camera/LICENSE)
 
