@@ -11,9 +11,11 @@ public sealed class FrameRelay
     private readonly object phoneLock = new();
     private WebSocket? activePhone;
     private long framesReceived;
+    private long bytesReceived;
     private DateTimeOffset? lastFrameAt;
 
     public long FramesReceived => Interlocked.Read(ref framesReceived);
+    public long BytesReceived => Interlocked.Read(ref bytesReceived);
     public DateTimeOffset? LastFrameAt => lastFrameAt;
     public int MonitorCount => monitors.Count;
     public bool IsPhoneConnected
@@ -79,6 +81,7 @@ public sealed class FrameRelay
 
             var frame = data.ToArray();
             Interlocked.Increment(ref framesReceived);
+            Interlocked.Add(ref bytesReceived, frame.Length);
             lastFrameAt = DateTimeOffset.UtcNow;
             await BroadcastFrameAsync(frame, cancellationToken);
         }

@@ -178,6 +178,7 @@ public static class LocalCamServerHost
             return Results.Json(new
             {
                 relay.FramesReceived,
+                relay.BytesReceived,
                 relay.LastFrameAt,
                 relay.MonitorCount,
                 phoneConnected = relay.IsPhoneConnected,
