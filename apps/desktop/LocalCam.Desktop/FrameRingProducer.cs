@@ -8,8 +8,8 @@ namespace LocalCam.Desktop;
 
 internal sealed class FrameRingProducer : IDisposable
 {
-    private const int Width = 640;
-    private const int Height = 480;
+    private const int Width = 1280;
+    private const int Height = 720;
     private const int Stride = Width;
     private const int PayloadLength = Width * Height * 3 / 2;
     private const int RingHeaderBytes = 64;
