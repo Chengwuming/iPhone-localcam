@@ -171,7 +171,7 @@ public partial class MainWindow : Window
             }
 
             data.Position = 0;
-            var source = FromJpeg(data, backgroundMode ? 720 : null);
+            var source = FromJpeg(data, backgroundMode ? 1080 : null);
             await Dispatcher.InvokeAsync(() =>
             {
                 frameProducer.Publish(source, previewMirrored);
