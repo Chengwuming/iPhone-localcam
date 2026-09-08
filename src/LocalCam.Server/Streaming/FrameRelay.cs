@@ -48,6 +48,19 @@ public sealed class FrameRelay
         }
     }
 
+    private string pocMimeType = "uninitialized";
+    private long pocConfiguredBps;
+    private int pocTrackWidth;
+    private int pocTrackHeight;
+    private double pocTrackFps;
+    private DateTimeOffset? pocSessionStart;
+    private DateTimeOffset? pocLastWindow;
+    private DateTimeOffset? pocLastChunkAt;
+    private long pocTotalBytes;
+    private long pocTotalChunks;
+    private long pocWindowBytes;
+    private long pocWindowChunks;
+
     public async Task ReceivePhoneFramesAsync(WebSocket phone, CancellationToken cancellationToken)
     {
         var buffer = new byte[64 * 1024];
@@ -74,16 +87,84 @@ public sealed class FrameRelay
             }
             while (!result.EndOfMessage);
 
+            if (result.MessageType == WebSocketMessageType.Text)
+            {
+                var text = System.Text.Encoding.UTF8.GetString(data.ToArray());
+                try
+                {
+                    using var doc = JsonDocument.Parse(text);
+                    var root = doc.RootElement;
+                    if (root.TryGetProperty("type", out var typeEl) && typeEl.GetString() == "poc.meta")
+                    {
+                        pocMimeType = root.TryGetProperty("mimeType", out var m) ? m.GetString() ?? "unknown" : "unknown";
+                        pocConfiguredBps = root.TryGetProperty("vBitrate", out var b) ? b.GetInt64() : 0;
+                        pocTrackWidth = root.TryGetProperty("trackWidth", out var w) ? w.GetInt32() : 0;
+                        pocTrackHeight = root.TryGetProperty("trackHeight", out var h) ? h.GetInt32() : 0;
+                        pocTrackFps = root.TryGetProperty("trackFps", out var f) ? f.GetDouble() : 0;
+
+                        pocSessionStart = DateTimeOffset.UtcNow;
+                        pocLastWindow = DateTimeOffset.UtcNow;
+                        pocWindowBytes = 0;
+                        pocWindowChunks = 0;
+                        pocTotalBytes = 0;
+                        pocTotalChunks = 0;
+                        pocLastChunkAt = null;
+
+                        Console.WriteLine();
+                        Console.WriteLine("================================================================");
+                        Console.WriteLine($"[MediaRecorder PoC] 手机连接成功!");
+                        Console.WriteLine($"  实际 Codec: {pocMimeType}");
+                        Console.WriteLine($"  配置 Bitrate: {(pocConfiguredBps > 0 ? (pocConfiguredBps / 1_000_000.0).ToString("F2") + " Mbps" : "默认(Safari自适应)")}");
+                        Console.WriteLine($"  相机源设置: {pocTrackWidth}x{pocTrackHeight} @ {pocTrackFps:F0}fps");
+                        Console.WriteLine("================================================================");
+                    }
+                }
+                catch
+                {
+                }
+                continue;
+            }
+
             if (result.MessageType != WebSocketMessageType.Binary || data.Length == 0)
             {
                 continue;
             }
 
-            var frame = data.ToArray();
+            var chunkLength = data.Length;
+            var now = DateTimeOffset.UtcNow;
+            if (pocSessionStart is null)
+            {
+                pocSessionStart = now;
+                pocLastWindow = now;
+            }
+
+            pocTotalBytes += chunkLength;
+            pocTotalChunks++;
+            pocWindowBytes += chunkLength;
+            pocWindowChunks++;
+
+            var chunkIntervalMs = pocLastChunkAt.HasValue ? (now - pocLastChunkAt.Value).TotalMilliseconds : 0;
+            pocLastChunkAt = now;
+
+            var dt = (now - (pocLastWindow ?? now)).TotalSeconds;
+            if (dt >= 1.0)
+            {
+                var observedMbps = (pocWindowBytes * 8.0) / (dt * 1_000_000.0);
+                var avgChunkKb = (pocWindowBytes / 1024.0) / Math.Max(1, pocWindowChunks);
+                var avgIntervalMs = (dt * 1000.0) / Math.Max(1, pocWindowChunks);
+                var elapsed = now - pocSessionStart.Value;
+                var stableMark = elapsed.TotalSeconds >= 120 ? "[2分钟稳定达标 ✓]" : "[测试中]";
+
+                Console.WriteLine($"[{elapsed:mm\\:ss}] {stableMark} Codec: {pocMimeType} | 实际码率: {observedMbps,5:F2} Mbps | 块间隔: {avgIntervalMs,5:F1} ms (最新:{chunkIntervalMs,4:F0}ms) | 块大小: {avgChunkKb,4:F1} KB | 总块数: {pocTotalChunks,5} | 总流量: {pocTotalBytes / (1024.0 * 1024.0),5:F2} MB");
+
+                pocWindowBytes = 0;
+                pocWindowChunks = 0;
+                pocLastWindow = now;
+            }
+
             Interlocked.Increment(ref framesReceived);
-            Interlocked.Add(ref bytesReceived, frame.Length);
-            lastFrameAt = DateTimeOffset.UtcNow;
-            await BroadcastFrameAsync(frame, cancellationToken);
+            Interlocked.Add(ref bytesReceived, chunkLength);
+            lastFrameAt = now;
         }
     }
 
