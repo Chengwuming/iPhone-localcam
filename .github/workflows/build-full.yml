@@ -1,8 +1,7 @@
 name: build-deskcam
 
-# Full upstream build (baseline A/B reproduction): native virtual camera
-# components + self-contained Desktop app. No code modifications - the only
-# file this branch adds on top of upstream is this workflow.
+# Build and test DeskCam's native video and virtual camera components,
+# then package the self-contained desktop app and installation scripts.
 # Artifact layout matches the bundled layout VirtualCameraSessionService
 # expects: <publish>/VirtualCamera/{registrar,probe,dll}
 

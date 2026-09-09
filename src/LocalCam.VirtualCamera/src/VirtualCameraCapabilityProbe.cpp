@@ -44,14 +44,14 @@ bool VerifyContinuity(IMFSourceReader* reader, int requestedFrames)
     if (FAILED(MFCreateMediaType(&mediaType)) ||
         FAILED(mediaType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video)) ||
         FAILED(mediaType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_RGB32)) ||
-        FAILED(MFSetAttributeSize(mediaType.Get(), MF_MT_FRAME_SIZE, 640, 480)) ||
+        FAILED(MFSetAttributeSize(mediaType.Get(), MF_MT_FRAME_SIZE, 1920, 1080)) ||
         FAILED(MFSetAttributeRatio(mediaType.Get(), MF_MT_FRAME_RATE, 30, 1)) ||
         FAILED(reader->SetCurrentMediaType(
             static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
             nullptr,
             mediaType.Get())))
     {
-        std::wcerr << L"      continuity: unable to select RGB32 640x480\n";
+        std::wcerr << L"      continuity: unable to select RGB32 1920x1080\n";
         return false;
     }
 

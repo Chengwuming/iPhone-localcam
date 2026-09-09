@@ -3,7 +3,7 @@ const status = document.querySelector('#status');
 const button = document.querySelector('#start');
 const metrics = document.querySelector('#metrics');
 let stream, socket, encoder, wakeLock, callbackId, retryTimer, watchdog;
-let running = false, wanted = false, starting = false, generation = 0, streamId = 0;
+let running = false, wanted = false, starting = false, recovering = false, generation = 0, streamId = 0;
 let sequence = 0, forceKey = true, discardUntilKey = false, colorFlags = 0;
 let width = 0, height = 0, sent = 0, byteCount = 0, skips = 0, startedAt = 0, windowStart = 0, lastOutput = 0;
 let maxEncodeMs = 0;
@@ -25,11 +25,12 @@ const teardown = () => {
     wakeLock = undefined; pending.clear();
 };
 async function stop() {
-    wanted = false; teardown(); button.disabled = false; button.textContent = '开始拍摄';
+    wanted = false; recovering = false; teardown(); button.disabled = false; button.textContent = '开始拍摄';
     button.className = ''; setStatus('已停止，摄像头已释放');
 }
 function reconnect(reason) {
     if (!wanted) return;
+    recovering = true;
     teardown();
     button.disabled = false; button.textContent = '停止拍摄'; button.className = 'stop';
     setStatus(reason + '，正在重新连接…');
@@ -136,7 +137,7 @@ async function begin() {
         connection.onmessage = event => { try { if (JSON.parse(event.data).type === 'keyframe') forceKey = true; } catch {} };
         connection.onclose = () => { if (gen === generation) reconnect('连接已断开'); };
         connection.onerror = () => { if (gen === generation) reconnect('网络暂时不可用'); };
-        running = true;
+        running = true; recovering = false;
         button.disabled = false; button.textContent = '停止拍摄'; button.className = 'stop';
         callbackId = camera.requestVideoFrameCallback(capture);
         if (navigator.wakeLock) navigator.wakeLock.request('screen').then(lock => {
@@ -158,9 +159,14 @@ async function begin() {
         }, 1000);
     } catch (error) {
         if (gen !== generation) return;
+        const retry = recovering && wanted && !['NotAllowedError', 'NotFoundError', 'NotSupportedError'].includes(error?.name);
         teardown(); setStatus(errorText(error));
         button.disabled = false; button.textContent = '重试连接'; button.className = '';
-        wanted = false;
+        if (retry) {
+            setStatus('电脑暂时不可用，正在重新连接…');
+            button.textContent = '停止拍摄'; button.className = 'stop';
+            retryTimer = setTimeout(() => begin(), 3000);
+        } else { wanted = false; recovering = false; }
     } finally { starting = false; }
 }
 button.onclick = () => {

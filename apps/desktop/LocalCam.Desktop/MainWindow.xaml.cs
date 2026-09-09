@@ -133,7 +133,7 @@ public partial class MainWindow : Window
     {
         if (frozen is not null) { Resume(); return; }
         frozen = pipeline?.Acquire();
-        if (frozen is not null) { FrozenLabel.Visibility = Visibility.Visible; FreezeButton.Content = "恢复 Space"; }
+        if (frozen is not null) { FrozenLabel.Visibility = clean ? Visibility.Collapsed : Visibility.Visible; FreezeButton.Content = "恢复 Space"; }
     }
     private void Copy_Click(object sender, RoutedEventArgs e) => Copy();
     private void Copy()
@@ -150,6 +150,7 @@ public partial class MainWindow : Window
     {
         clean = !clean;
         Header.Visibility = Controls.Visibility = clean ? Visibility.Collapsed : Visibility.Visible;
+        FrozenLabel.Visibility = !clean && frozen is not null ? Visibility.Visible : Visibility.Collapsed;
         WindowStyle = clean ? WindowStyle.None : WindowStyle.SingleBorderWindow;
         ResizeMode = clean ? ResizeMode.CanResizeWithGrip : ResizeMode.CanResize;
     }

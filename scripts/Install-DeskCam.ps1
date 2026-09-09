@@ -9,14 +9,18 @@ if (!(Test-Path -LiteralPath $registrar) -or !(Test-Path -LiteralPath $mediaSour
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (!$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     $arguments = '-NoProfile -ExecutionPolicy Bypass -File "' + $MyInvocation.MyCommand.Path + '"'
-    Start-Process powershell.exe -Verb RunAs -ArgumentList $arguments -Wait
-    exit
+    $installation = Start-Process powershell.exe -Verb RunAs -ArgumentList $arguments -Wait -PassThru
+    exit $installation.ExitCode
 }
 & $registrar --install $mediaSource
 if ($LASTEXITCODE -ne 0) { throw "Camera registration failed: $LASTEXITCODE" }
 $rule = Get-NetFirewallRule -DisplayName 'DeskCam Local Camera' -ErrorAction SilentlyContinue
 if (!$rule) {
     New-NetFirewallRule -DisplayName 'DeskCam Local Camera' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 29100,29101 -Program $app -Profile Any | Out-Null
+} else {
+    $rule | Set-NetFirewallRule -Enabled True -Direction Inbound -Action Allow -Profile Any
+    $rule | Get-NetFirewallApplicationFilter | Set-NetFirewallApplicationFilter -Program $app
+    $rule | Get-NetFirewallPortFilter | Set-NetFirewallPortFilter -Protocol TCP -LocalPort 29100,29101
 }
 Write-Host 'DeskCam installed. Close this window, then open Start-DeskCam.cmd.'
 Write-Host 'Camera name in QQ / Camera / Chrome: LocalCam Camera'

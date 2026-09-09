@@ -63,7 +63,7 @@
                     <Border Margin="0,18,0,10" Padding="8" HorizontalAlignment="Center" Background="#FFFFFF" BorderBrush="#E1DFDD" BorderThickness="1" CornerRadius="8">
                         <Image x:Name="PhoneQr" Width="260" Height="260" SnapsToDevicePixels="True" />
                     </Border>
-                    <TextBlock Text="请用 iPhone 相机扫描，打开 Safari 后点“开始本地传输”并允许使用摄像头。" HorizontalAlignment="Center" Foreground="#605E5C" TextAlignment="Center" TextWrapping="Wrap" />
+                    <TextBlock Text="请用 iPhone 相机扫描，打开 Safari 并允许使用摄像头；成功后添加到主屏幕。" HorizontalAlignment="Center" Foreground="#605E5C" TextAlignment="Center" TextWrapping="Wrap" />
                     <TextBlock x:Name="ExpiryText" HorizontalAlignment="Center" Foreground="#605E5C" FontSize="12" Margin="0,6,0,0" />
                 </StackPanel>
             </Border>
