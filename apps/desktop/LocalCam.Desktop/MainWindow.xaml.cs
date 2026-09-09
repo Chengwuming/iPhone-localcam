@@ -25,7 +25,7 @@ public partial class MainWindow : Window
     private Point inspectPoint = new(.5,.5);
     private long lastInspect;
     private long shownPhoto;
-    private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(50) };
+    private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(1000.0 / 30) };
     private WriteableBitmap? bitmap;
     private int displayWidth = 1920, displayHeight = 1080;
     private DisplayFrame? frozen;
