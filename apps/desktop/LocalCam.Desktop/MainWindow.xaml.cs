@@ -258,21 +258,22 @@ public partial class MainWindow : Window
     }
     private void Window_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
-        if (e.Key == Key.C && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) Copy();
-        else if (e.Key == Key.S && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) SaveFrame();
-        else if (e.Key == Key.F1) ShowHelp();
-        else if (e.Key == Key.D1 && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) cameraPanel?.RestorePreset("整张 A4");
-        else if (e.Key == Key.D2 && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) cameraPanel?.RestorePreset("局部推导");
-        else if (e.Key == Key.F11 || (e.Key == Key.Escape && clean)) Clean();
-        else if (e.Key == Key.C) ToggleCrop();
-        else if (e.Key == Key.R) Rotate();
-        else if (e.Key is Key.D0 or Key.NumPad0) Reset();
-        else if (e.Key == Key.Space) Freeze();
-        else if (e.Key == Key.L) ToggleFocusLock();
-        else if (e.Key == Key.A && AutofocusButton.IsEnabled) SendCamera("refocus");
-        else if (e.Key == Key.I) Inspect_Click(this,new RoutedEventArgs());
-        else if (e.Key == Key.H) CaptureHD_Click(this,new RoutedEventArgs());
-        else if (e.Key == Key.P) CameraControls_Click(this,new RoutedEventArgs());
+        var key=e.Key==Key.ImeProcessed?e.ImeProcessedKey:e.Key;
+        if (key == Key.C && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) Copy();
+        else if (key == Key.S && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) SaveFrame();
+        else if (key == Key.F1) ShowHelp();
+        else if (key == Key.D1 && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) cameraPanel?.RestorePreset("整张 A4");
+        else if (key == Key.D2 && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) cameraPanel?.RestorePreset("局部推导");
+        else if (key == Key.F11 || (key == Key.Escape && clean)) Clean();
+        else if (key == Key.C) ToggleCrop();
+        else if (key == Key.R) Rotate();
+        else if (key is Key.D0 or Key.NumPad0) Reset();
+        else if (key == Key.Space) Freeze();
+        else if (key == Key.L) ToggleFocusLock();
+        else if (key == Key.A && AutofocusButton.IsEnabled) SendCamera("refocus");
+        else if (key == Key.I) Inspect_Click(this,new RoutedEventArgs());
+        else if (key == Key.H) CaptureHD_Click(this,new RoutedEventArgs());
+        else if (key == Key.P) CameraControls_Click(this,new RoutedEventArgs());
         else return;
         e.Handled = true;
     }

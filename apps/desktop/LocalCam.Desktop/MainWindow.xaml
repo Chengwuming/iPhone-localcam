@@ -2,7 +2,7 @@
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  Title="DeskCam" Icon="/Assets/LocalCam.ico" Width="1000" Height="700" MinWidth="460" MinHeight="460"
- Background="#111614" Foreground="#ECF4EF" FontFamily="Segoe UI" KeyDown="Window_KeyDown">
+ Background="#111614" Foreground="#ECF4EF" FontFamily="Segoe UI" InputMethod.IsInputMethodEnabled="False" KeyDown="Window_KeyDown">
  <Window.Resources>
   <Style TargetType="Button"><Setter Property="Background" Value="#29392F"/><Setter Property="Foreground" Value="#EDF6EF"/>
    <Setter Property="BorderThickness" Value="0"/><Setter Property="Padding" Value="12,7"/><Setter Property="Margin" Value="0,0,6,0"/>
