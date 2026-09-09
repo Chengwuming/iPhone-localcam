@@ -107,7 +107,7 @@ public partial class MainWindow : Window
             catch (Exception ex) { StatusText.Text = "照片打开失败：" + ex.Message; }
         }
         if(camera is null)FocusLockButton.IsEnabled=AutofocusButton.IsEnabled=false;
-        CaptureText.Visibility = camera?.Snapshot.Pending==true || photos?.Latest is not null || CaptureText.Text.Contains("失败") ? Visibility.Visible : Visibility.Collapsed;
+        CaptureText.Visibility = camera?.Snapshot.Pending==true || photos?.Latest is not null || CaptureText.Text?.Contains("失败")==true ? Visibility.Visible : Visibility.Collapsed;
         using var live = pipeline?.Acquire();
         var frame = frozen ?? live;
         if (frame is not null)
