@@ -118,7 +118,7 @@ internal sealed class CameraPanel : UserControl, IDisposable
             bool dr=Range(state,"focusRange",distance,sync&&queuedDistance is null&&!distance.IsMouseCaptureWithin,Number(settings,"focusDistance"));
             zoom.IsEnabled=available&&zr;distance.IsEnabled=available&&dr;
             foreach(var button in quickZoom)button.IsEnabled=available&&zr&&(double)button.Tag>=zoom.Minimum&&(double)button.Tag<=zoom.Maximum;
-            if(!zr)zoomValue.Text="手机未开放相机倍率";if(!dr)distanceValue.Text="手机未开放手动焦距";
+            zoomValue.Text=zr?$"倍率 {zoom.Value:F2}×":"手机未开放相机倍率";distanceValue.Text=dr?$"焦点 {distance.Value:F3}":"手机未开放手动焦距";
             quality.IsEnabled=focus.IsEnabled=refocus.IsEnabled=available&&!snapshot.Pending&&queuedZoom is null&&queuedDistance is null;
             foreach(var button in presetButtons)button.IsEnabled=quality.IsEnabled;
             foreach(ComboBoxItem option in focus.Items){var mode=(string)option.Tag;option.IsEnabled=mode=="auto"||mode=="manual"&&dr||mode=="none"&&Flag(state,"canLock");}
