@@ -49,7 +49,9 @@ public partial class MainWindow : Window
         this.settings = settings; this.pipeline = pipeline; this.photos = photos; this.camera = camera;
         InitializeComponent();
         if(camera is not null){cameraPanel=new CameraPanel(camera,settings,()=>pipeline?.Transform??new ViewTransform(),v=>{Resume();if(pipeline is not null)pipeline.Transform=v;Save();});CameraSidebar.Content=cameraPanel;}
-        SizeChanged+=(_,_)=>UpdateSidebar();UpdateSidebar();
+        SizeChanged+=(_,_)=>UpdateSidebar();
+        Controls.SizeChanged+=(_,_)=>UpdateSidebar();
+        SecondaryActions.Expanded+=(_,_)=>{sidebarOpen=false;UpdateSidebar();ShowTools();};UpdateSidebar();
         toolsUntil=Stopwatch.GetTimestamp()+Stopwatch.Frequency*3;
         CameraText.Text = cameraStatus ?? "虚拟摄像头未启动";
         if (startupError is not null) EmptyText.Text = startupError;
@@ -193,13 +195,14 @@ public partial class MainWindow : Window
     private void CameraControls_Click(object sender, RoutedEventArgs e)
     {
         if(camera is null)return;
-        sidebarOpen=!sidebarOpen;UpdateSidebar();ShowTools();
+        sidebarOpen=!sidebarOpen;if(sidebarOpen)SecondaryActions.IsExpanded=false;UpdateSidebar();ShowTools();
     }
     private void UpdateSidebar()
     {
         if(SidebarShell is null)return;
         SidebarShell.Visibility=sidebarOpen&&!clean?Visibility.Visible:Visibility.Collapsed;
         SidebarShell.Width=Math.Min(320,Math.Max(260,ActualWidth-40));
+        SidebarShell.Margin=new Thickness(16,76,16,Math.Max(96,Controls.ActualHeight+28));
     }
     private void Inspect_Click(object sender,RoutedEventArgs e)
     {
