@@ -10,6 +10,7 @@ namespace LocalCam.Server;
 public sealed class LocalCamServerInstance(WebApplication application, FrameRelay relay) : IAsyncDisposable
 {
     public FrameRelay Relay { get; } = relay;
+    public PhotoStore Photos { get; } = new();
     public Func<byte[]?>? Snapshot { get; set; }
     public Func<object>? VideoStatus { get; set; }
     public Task WaitForShutdownAsync(CancellationToken ct = default) => application.WaitForShutdownAsync(ct);
@@ -22,7 +23,9 @@ public static class LocalCamServerHost
     public const int HttpsPort = 29101;
     public static async Task<LocalCamServerInstance> StartAsync(string[]? args = null, CancellationToken cancellationToken = default)
     {
-        var dataDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LocalCam");
+        // Integration tests use a separate credential/certificate store, preserving the paired phone.
+        var dataDirectory = Environment.GetEnvironmentVariable("DESKCAM_DATA_DIR") ??
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LocalCam");
         var addresses = LocalNetworkAddressProvider.GetUsableIPv4Addresses()
             .Append(LocalNetworkAddressProvider.WindowsMobileHotspotDefaultAddress).Distinct().ToArray();
         var ca = new LocalCertificateAuthority(Path.Combine(dataDirectory, "certificates"));
@@ -82,6 +85,7 @@ public static class LocalCamServerHost
         app.MapGet("/phone", (HttpContext c) => c.Request.IsHttps ? Asset("phone.html", "text/html; charset=utf-8") : Results.NotFound());
         app.MapGet("/phone.js", (HttpContext c) => c.Request.IsHttps ? Asset("phone.js", "text/javascript; charset=utf-8") : Results.NotFound());
         app.MapGet("/camera-frame.mjs", (HttpContext c) => c.Request.IsHttps ? Asset("camera-frame.mjs", "text/javascript; charset=utf-8") : Results.NotFound());
+        app.MapGet("/camera-controls.mjs", (HttpContext c) => c.Request.IsHttps ? Asset("camera-controls.mjs", "text/javascript; charset=utf-8") : Results.NotFound());
         app.MapGet("/manifest.json", (HttpContext c) => c.Request.IsHttps ? Asset("manifest.json", "application/manifest+json") : Results.NotFound());
         app.MapGet("/icon.svg", () => Asset("icon.svg", "image/svg+xml"));
         app.MapPost("/api/pair", async (HttpContext c) =>
@@ -121,6 +125,37 @@ public static class LocalCamServerHost
             var bytes = instance.Snapshot?.Invoke();
             return bytes is null ? Results.StatusCode(503) : Results.File(bytes, "image/jpeg");
         });
+        int photoUpload = 0;
+        app.MapPost("/api/photo/request", (HttpContext c) =>
+        {
+            if (!IsLocal(c) || c.Request.Headers.ContainsKey("Origin")) return Results.NotFound();
+            return !relay.IsPhoneConnected ? Results.Conflict("请先打开手机 DeskCam") : Results.Json(new { id = instance.Photos.Request() });
+        });
+        app.MapGet("/api/photo/request", (HttpContext c) =>
+            !c.Request.IsHttps || !devices.Validate(c.Request.Cookies["deskcam"]) ? Results.StatusCode(403) :
+            Results.Json(new { id = instance.Photos.TakeRequest() }));
+        app.MapPost("/api/photo", async (HttpContext c) =>
+        {
+            if (!c.Request.IsHttps || !SameOrigin(c) || !devices.Validate(c.Request.Cookies["deskcam"])) return Results.StatusCode(403);
+            if (Interlocked.CompareExchange(ref photoUpload, 1, 0) != 0) return Results.StatusCode(429);
+            try
+            {
+                if (c.Request.ContentLength > PhotoStore.MaximumBytes) return Results.StatusCode(413);
+                using var data = new MemoryStream(); var buffer = new byte[65536]; int read;
+                while ((read = await c.Request.Body.ReadAsync(buffer, c.RequestAborted)) > 0)
+                {
+                    if (data.Length + read > PhotoStore.MaximumBytes) return Results.StatusCode(413);
+                    data.Write(buffer, 0, read);
+                }
+                var source = c.Request.Query["source"] == "system-camera" ? "system-camera" : "camera-photo";
+                var photo = instance.Photos.Accept(data.ToArray(), source);
+                return Results.Json(new { photo.Sequence, photo.Width, photo.Height });
+            }
+            catch (InvalidDataException ex) { return Results.BadRequest(ex.Message); }
+            finally { Interlocked.Exchange(ref photoUpload, 0); }
+        });
+        app.MapGet("/api/photo.jpg", (HttpContext c) => !IsLocal(c) ? Results.NotFound() :
+            instance.Photos.Latest is { } photo ? Results.File(photo.Jpeg, "image/jpeg") : Results.NotFound());
         await app.StartAsync(cancellationToken);
         return instance;
     }

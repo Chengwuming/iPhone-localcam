@@ -37,7 +37,25 @@ internal static class DeskCamTests
             store.Revoke(); Assert(!store.Validate(second), "Revoked credential accepted");
         }
         finally { if (Directory.Exists(path)) Directory.Delete(path, true); }
-        Console.WriteLine("DeskCam packet validation and persistent pairing tests passed.");
+        var photos = new PhotoStore();
+        var request = photos.Request();
+        Assert(photos.Request() == request && photos.TakeRequest() == request && photos.TakeRequest() is null,
+            "Photo requests were duplicated or not consumed");
+        // Minimal SOF header tests dimension parsing; real JPEG decoding is checked in desktop integration.
+        byte[] jpeg = [0xff, 0xd8, 0xff, 0xc0, 0, 11, 8, 0x0b, 0xb8, 0x0f, 0xa0, 1, 1, 0x11, 0, 0xff, 0xd9];
+        var photo = photos.Accept(jpeg, "camera-photo");
+        Assert(photo.Width == 4000 && photo.Height == 3000 && photo.Sequence == 1 && photos.Latest == photo,
+            "HD photo dimensions or sequence lost");
+        foreach (var bad in new[] { jpeg[..10], new byte[32], new byte[] { 0xff, 0xd8, 0xff, 0xc0, 0, 1 } })
+        {
+            try { photos.Accept(bad, "camera-photo"); throw new Exception("Invalid photo accepted"); }
+            catch (InvalidDataException) { }
+        }
+        Assert(photos.Latest == photo, "Invalid upload overwrote previous photo");
+        var oversized = (byte[])jpeg.Clone(); oversized[9] = 0x30;
+        try { PhotoStore.Dimensions(oversized); throw new Exception("Oversized dimensions accepted"); }
+        catch (InvalidDataException) { }
+        Console.WriteLine("DeskCam packet validation, persistent pairing and HD photo tests passed.");
     }
     private static void Reject(byte[] bytes, string reason)
     {

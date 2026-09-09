@@ -206,7 +206,7 @@ static uint8_t clampByte(int v){return static_cast<uint8_t>(std::clamp(v,0,255))
 // Transform NV12 planes directly; rotate coordinates before cropping. Output remains limited-range NV12.
 API int dc_render(const uint8_t* input,int sw,int sh,int rotation,double cx,double cy,double cw,double ch,
     uint8_t* output,int ow,int oh,uint8_t* bgra,int* rect) {
-    if(!input||!output||!bgra||!rect||sw<16||sh<16||sw>1920||sh>1920||(sw&1)||(sh&1)||
+    if(!input||!output||!rect||sw<16||sh<16||sw>1920||sh>1920||(sw&1)||(sh&1)||
         ow<16||oh<16||ow>1920||oh>1920||(ow&1)||(oh&1)||rotation<0||rotation>3||
         !std::isfinite(cx)||!std::isfinite(cy)||!std::isfinite(cw)||!std::isfinite(ch)||
         cx<0||cy<0||cw<0.01||ch<0.01||cx+cw>1.000001||cy+ch>1.000001)return E_INVALIDARG;
@@ -255,7 +255,7 @@ API int dc_render(const uint8_t* input,int sw,int sh,int rotation,double cx,doub
         }
     }
     // Canonical display and virtual camera output: BT.709 limited range.
-    for(int y=0;y<oh;++y)for(int x=0;x<ow;++x){
+    if(bgra)for(int y=0;y<oh;++y)for(int x=0;x<ow;++x){
         int l=std::max(0,static_cast<int>(output[y*ow+x])-16);
         int uv=ow*oh+(y/2)*ow+(x&~1),u=output[uv]-128,v=output[uv+1]-128;
         int p=(y*ow+x)*4;

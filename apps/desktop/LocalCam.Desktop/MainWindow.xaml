@@ -34,6 +34,7 @@
     <Button Content="旋转 R" Click="Rotate_Click"/><Button x:Name="CropButton" Content="裁剪 C" Click="Crop_Click"/>
     <Button Content="重置 0" Click="Reset_Click"/><Button x:Name="FreezeButton" Content="冻结 Space" Click="Freeze_Click"/>
     <Button Content="复制 Ctrl+C" Click="Copy_Click"/><Button x:Name="TopButton" Content="置顶" Click="Top_Click"/>
+    <Button Content="Capture HD" Click="CaptureHD_Click"/>
     <Button Content="纯净 F11" Click="Clean_Click"/>
    </WrapPanel>
    <TextBlock x:Name="StatusText" Foreground="#9CAD9F" FontSize="12" TextWrapping="Wrap" Margin="0,10,0,0" Text="等待手机"/>

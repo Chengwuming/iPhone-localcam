@@ -1,4 +1,15 @@
 import { cameraFrame } from './camera-frame.mjs';
+import { qualities, adjustable, applyVerified, takePhoto, preparePhoto } from './camera-controls.mjs';
+const quality = document.querySelector('#quality');
+const focusMode = document.querySelector('#focus-mode'), focusDistance = document.querySelector('#focus-distance');
+const zoom = document.querySelector('#camera-zoom'), hdButton = document.querySelector('#capture-hd');
+const photoStatus = document.querySelector('#photo-status'), photoFile = document.querySelector('#photo-file');
+let preferences = { quality: 'paper', focus: 'auto', distance: null, zoom: null };
+try { Object.assign(preferences, JSON.parse(localStorage.getItem('deskcam-camera-settings') || '{}')); } catch {}
+if (!Object.hasOwn(qualities, preferences.quality)) preferences.quality = 'paper';
+quality.value = preferences.quality;
+const savePreferences = () => { try { localStorage.setItem('deskcam-camera-settings', JSON.stringify(preferences)); } catch {} };
+let photoBusy = false, photoPolling = false, systemPicker = false;
 const camera = document.querySelector('#camera');
 const surface = document.createElement('canvas');
 const surfaceContext = surface.getContext('2d', { alpha: false });
@@ -24,6 +35,8 @@ const teardown = () => {
     if (socket) { socket.onclose = null; socket.onerror = null; socket.close(); socket = undefined; }
     if (stream) stream.getTracks().forEach(track => track.stop());
     stream = undefined; camera.srcObject = null;
+    hdButton.disabled = true; focusMode.disabled = zoom.disabled = true;
+    document.querySelector('#refocus').disabled = true;
     if (wakeLock) wakeLock.release().catch(() => {});
     wakeLock = undefined; pending.clear();
 };
@@ -70,6 +83,7 @@ function sendChunk(chunk, metadata, gen) {
 function capture(now) {
     if (!running) return;
     callbackId = camera.requestVideoFrameCallback(capture);
+    if (photoBusy) return;
     if (encoder.encodeQueueSize >= 2 || socket.bufferedAmount > 98304) { skips++; return; }
     if (camera.videoWidth !== width || camera.videoHeight !== height) {
         reconnect('画面方向已变化'); return;
@@ -81,15 +95,15 @@ function capture(now) {
         pending.set(timestamp, performance.now());
         // Some encoders may drop input frames in realtime mode. Bound timestamp tracking too.
         while (pending.size > 12) pending.delete(pending.keys().next().value);
-        const keyFrame = forceKey || sequence % 40 === 0;
+        const keyFrame = forceKey || sequence % (qualities[preferences.quality].fps * 2) === 0;
         forceKey = false;
         encoder.encode(frame, { keyFrame });
     } catch (error) { reconnect('编码异常：' + errorText(error)); }
     finally { frame?.close(); }
 }
 async function begin() {
-    if (starting || running || !wanted) return;
-    starting = true; button.disabled = true;
+    if (starting || running || !wanted || photoBusy) return;
+    starting = true; button.disabled = true; quality.disabled = true;
     const gen = ++generation;
     try {
         if (!window.isSecureContext) throw new Error('需要先信任电脑证书并通过 HTTPS 打开');
@@ -101,16 +115,19 @@ async function begin() {
             throw new Error('请先用电脑 DeskCam 的“连接手机”二维码配对');
         }
         setStatus('正在打开后置摄像头…');
+        const preset = qualities[preferences.quality];
         const media = await navigator.mediaDevices.getUserMedia({ audio: false, video: {
-            facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 },
-            frameRate: { ideal: 20, max: 20 }
+            facingMode: { ideal: 'environment' }, width: { ideal: preset.width }, height: { ideal: preset.height },
+            frameRate: { ideal: preset.fps, max: preset.fps }
         }});
         if (gen !== generation || !wanted) { media.getTracks().forEach(t => t.stop()); return; }
         stream = media; camera.srcObject = media; await camera.play();
+        await restoreCameraSettings(media.getVideoTracks()[0]);
+        if (gen !== generation || !wanted) return;
         width = camera.videoWidth; height = camera.videoHeight;
-        if (width * height !== 1920 * 1080 || Math.max(width, height) !== 1920)
-            throw new Error('相机实际输出 ' + width + '×' + height + '，未达到 1080p。请关闭其他相机应用后重试');
-        const config = { codec: 'avc1.420028', width, height, bitrate: 8000000, framerate: 20,
+        if (width * height !== preset.width * preset.height || Math.max(width, height) !== preset.width)
+            throw new Error('相机实际输出 ' + width + '×' + height + '，未达到所选分辨率；可降低清晰度后重试');
+        const config = { codec: 'avc1.420028', width, height, bitrate: preset.bitrate, framerate: preset.fps,
             latencyMode: 'realtime', hardwareAcceleration: 'prefer-hardware', avc: { format: 'annexb' } };
         let supported = await VideoEncoder.isConfigSupported(config);
         if (!supported.supported) {
@@ -141,6 +158,7 @@ async function begin() {
         connection.onclose = () => { if (gen === generation) reconnect('连接已断开'); };
         connection.onerror = () => { if (gen === generation) reconnect('网络暂时不可用'); };
         running = true; recovering = false;
+        hdButton.disabled = false;
         button.disabled = false; button.textContent = '停止拍摄'; button.className = 'stop';
         callbackId = camera.requestVideoFrameCallback(capture);
         if (navigator.wakeLock) navigator.wakeLock.request('screen').then(lock => {
@@ -159,7 +177,13 @@ async function begin() {
                 '像素编码 ' + surface.width + '×' + surface.height + '\n' +
                 (metrics.dataset.codec || '') + '\n' + navigator.userAgent;
             sent = 0; byteCount = 0; skips = 0; maxEncodeMs = 0; windowStart = now;
-            if (connection.bufferedAmount > 262144 || now - lastOutput > 4000) reconnect('视频暂时停滞');
+            if (!photoBusy && (connection.bufferedAmount > 262144 || now - lastOutput > 4000)) reconnect('视频暂时停滞');
+            if (!photoBusy && !photoPolling) {
+                photoPolling = true;
+                fetch('/api/photo/request', { signal: AbortSignal.timeout(3000) }).then(r => r.ok ? r.json() : {}).then(request => {
+                    if (gen === generation && request.id) captureHD();
+                }).catch(() => {}).finally(() => { photoPolling = false; });
+            }
         }, 1000);
     } catch (error) {
         if (gen !== generation) return;
@@ -171,13 +195,124 @@ async function begin() {
             button.textContent = '停止拍摄'; button.className = 'stop';
             retryTimer = setTimeout(() => begin(), 3000);
         } else { wanted = false; recovering = false; }
-    } finally { starting = false; }
+    } finally { starting = false; quality.disabled = false; }
 }
+function showCameraSettings(track) {
+    const c = track.getCapabilities?.() || {}, s = track.getSettings();
+    document.querySelector('#capabilities').textContent = JSON.stringify({ capabilities: c, settings: s }, null, 2);
+    focusMode.replaceChildren(new Option('自动对焦（系统默认）', 'auto'));
+    if (adjustable(c.focusDistance)) focusMode.add(new Option('手动调焦', 'manual'));
+    if (c.focusMode?.includes('none')) focusMode.add(new Option('锁定当前焦点', 'none'));
+    focusMode.value = [...focusMode.options].some(o => o.value === preferences.focus) ? preferences.focus : 'auto';
+    focusMode.disabled = !adjustable(c.focusDistance) && !c.focusMode?.length;
+    document.querySelector('#refocus').disabled = false;
+    document.querySelector('#focus-range').hidden = !adjustable(c.focusDistance) || focusMode.value !== 'manual';
+    if (adjustable(c.focusDistance)) {
+        focusDistance.min = c.focusDistance.min; focusDistance.max = c.focusDistance.max;
+        focusDistance.step = c.focusDistance.step || (c.focusDistance.max - c.focusDistance.min) / 100;
+        focusDistance.value = s.focusDistance ?? preferences.distance ?? c.focusDistance.min;
+        document.querySelector('#focus-value').textContent = Number(focusDistance.value).toFixed(3);
+    }
+    document.querySelector('#focus-status').textContent = !adjustable(c.focusDistance) ?
+        'Safari 未开放手动调焦。' + (s.focusMode ? '当前模式：' + s.focusMode : '自动对焦由系统管理，浏览器无法确认是否合焦。') :
+        '实际焦点值：' + (s.focusDistance ?? '未返回') + '；请放大纸面检查清晰度。';
+    zoom.disabled = !adjustable(c.zoom);
+    if (adjustable(c.zoom)) {
+        zoom.min = c.zoom.min; zoom.max = c.zoom.max; zoom.step = c.zoom.step || .1;
+        zoom.value = s.zoom ?? c.zoom.min;
+        document.querySelector('#zoom-value').textContent = Number(zoom.value).toFixed(1) + '×';
+    } else document.querySelector('#zoom-value').textContent = '未开放';
+    document.querySelector('#zoom-status').textContent = adjustable(c.zoom) ?
+        '控制采集端倍率；实际细节取决于手机选用的采集格式。' : 'Safari 未开放相机倍率。电脑端仍可裁剪，但不能增加细节。';
+}
+async function restoreCameraSettings(track) {
+    const c = track.getCapabilities?.() || {};
+    const changes = {};
+    if (adjustable(c.zoom) && Number.isFinite(preferences.zoom)) changes.zoom = Math.min(c.zoom.max, Math.max(c.zoom.min, preferences.zoom));
+    if (preferences.focus === 'manual' && adjustable(c.focusDistance) && Number.isFinite(preferences.distance)) {
+        if (c.focusMode?.includes('manual')) changes.focusMode = 'manual';
+        changes.focusDistance = Math.min(c.focusDistance.max, Math.max(c.focusDistance.min, preferences.distance));
+    } else if (preferences.focus === 'auto' && c.focusMode?.includes('continuous')) changes.focusMode = 'continuous';
+    else if (preferences.focus === 'none' && c.focusMode?.includes('none')) changes.focusMode = 'none';
+    try { if (Object.keys(changes).length) await applyVerified(track, changes); }
+    catch (error) { photoStatus.textContent = '部分相机设置未确认生效：' + errorText(error); }
+    showCameraSettings(track);
+}
+quality.onchange = () => {
+    preferences.quality = quality.value; savePreferences();
+    if (wanted && !photoBusy) { teardown(); begin(); }
+};
+focusMode.onchange = async () => {
+    const track = stream?.getVideoTracks()[0]; if (!track || photoBusy || starting) return;
+    preferences.focus = focusMode.value; savePreferences();
+    if (preferences.focus === 'auto') { teardown(); begin(); return; }
+    showCameraSettings(track);
+    if (preferences.focus === 'manual') { await focusDistance.onchange(); return; }
+    if (preferences.focus === 'none') {
+        try { await applyVerified(track, { focusMode: 'none' }); }
+        catch (error) { document.querySelector('#focus-status').textContent = errorText(error); }
+    }
+};
+focusDistance.oninput = () => { document.querySelector('#focus-value').textContent = Number(focusDistance.value).toFixed(3); };
+focusDistance.onchange = async () => {
+    const track = stream?.getVideoTracks()[0]; if (!track || photoBusy || starting) return;
+    const changes = { focusDistance: Number(focusDistance.value) };
+    if (track.getCapabilities().focusMode?.includes('manual')) changes.focusMode = 'manual';
+    try { await applyVerified(track, changes); preferences.distance = changes.focusDistance; savePreferences(); showCameraSettings(track); }
+    catch (error) { document.querySelector('#focus-status').textContent = errorText(error); }
+};
+document.querySelector('#refocus').onclick = () => {
+    preferences.focus = 'auto'; preferences.distance = null; savePreferences();
+    if (wanted && !photoBusy) { teardown(); begin(); }
+};
+zoom.oninput = () => { document.querySelector('#zoom-value').textContent = Number(zoom.value).toFixed(1) + '×'; };
+zoom.onchange = async () => {
+    const track = stream?.getVideoTracks()[0]; if (!track || photoBusy || starting) return;
+    try { await applyVerified(track, { zoom: Number(zoom.value) }); preferences.zoom = Number(zoom.value); savePreferences(); showCameraSettings(track); }
+    catch (error) { document.querySelector('#zoom-status').textContent = errorText(error); }
+};
+async function uploadPhoto(blob, source) {
+    photoStatus.textContent = '正在处理并传送原始照片…';
+    const photo = await preparePhoto(blob);
+    const response = await fetch('/api/photo?source=' + source, { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: photo.jpeg });
+    if (!response.ok) throw new Error('照片上传失败：' + response.status);
+    photoStatus.textContent = '已传到电脑：' + photo.width + '×' + photo.height +
+        (photo.width * photo.height <= 1920 * 1080 ? '；照片像素未超过 1080p，可尝试“系统相机拍照”。' : '；电脑可放大、复制或保存。');
+}
+async function captureHD() {
+    const track = stream?.getVideoTracks()[0]; if (!track || photoBusy) return;
+    photoBusy = true; hdButton.disabled = quality.disabled = focusMode.disabled = focusDistance.disabled = zoom.disabled = true;
+    photoStatus.textContent = '正在触发相机拍照…';
+    try { await uploadPhoto(await takePhoto(track), 'camera-photo'); }
+    catch (error) { photoStatus.textContent = errorText(error) + '。也可点“系统相机拍照”。'; }
+    finally {
+        photoBusy = false; hdButton.disabled = !running; quality.disabled = starting; focusDistance.disabled = false;
+        if (running) showCameraSettings(stream.getVideoTracks()[0]);
+        lastOutput = performance.now(); forceKey = true;
+        if (wanted && !running) begin();
+    }
+}
+hdButton.onclick = captureHD;
+document.querySelector('#system-photo').onclick = () => {
+    if (photoBusy || starting) return;
+    photoStatus.textContent = '请用系统相机拍照并确认；取消后恢复实时画面。';
+    photoBusy = systemPicker = true; teardown(); photoFile.value = ''; photoFile.click();
+};
+async function finishSystemPhoto() {
+    if (!systemPicker) return;
+    systemPicker = false;
+    try { if (photoFile.files?.[0]) await uploadPhoto(photoFile.files[0], 'system-camera'); }
+    catch (error) { photoStatus.textContent = errorText(error); }
+    finally { photoBusy = false; if (wanted) begin(); }
+}
+photoFile.onchange = finishSystemPhoto;
+photoFile.addEventListener('cancel', finishSystemPhoto);
 button.onclick = () => {
     if (wanted || running) stop();
     else { wanted = true; begin(); }
 };
 document.addEventListener('visibilitychange', () => {
+    if (photoBusy) return;
     if (document.hidden) {
         const resume = wanted;
         teardown(); wanted = resume;

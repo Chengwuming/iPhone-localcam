@@ -7,6 +7,8 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using LocalCam.Server;
+using LocalCam.Server.Streaming;
+using System.Net.Http;
 using Point = System.Windows.Point;
 
 namespace LocalCam.Desktop;
@@ -14,8 +16,11 @@ public partial class MainWindow : Window
 {
     private readonly AppSettingsService settings;
     private readonly VideoPipeline? pipeline;
+    private readonly PhotoStore? photos;
+    private long shownPhoto;
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(50) };
-    private readonly WriteableBitmap bitmap = new(DisplayFrame.Width, DisplayFrame.Height, 96, 96, PixelFormats.Bgra32, null);
+    private WriteableBitmap? bitmap;
+    private int displayWidth = 1920, displayHeight = 1080;
     private DisplayFrame? frozen;
     private long shownSequence, shownConnection, statusTick;
     private bool cropping, clean, dragging, started;
@@ -27,9 +32,9 @@ public partial class MainWindow : Window
     [DllImport("user32.dll")] private static extern bool RegisterHotKey(IntPtr window, int id, uint modifiers, uint key);
     [DllImport("user32.dll")] private static extern bool UnregisterHotKey(IntPtr window, int id);
 
-    internal MainWindow(AppSettingsService settings, VideoPipeline? pipeline, string? cameraStatus, string? startupError)
+    internal MainWindow(AppSettingsService settings, VideoPipeline? pipeline, string? cameraStatus, string? startupError, PhotoStore? photos = null)
     {
-        this.settings = settings; this.pipeline = pipeline;
+        this.settings = settings; this.pipeline = pipeline; this.photos = photos;
         InitializeComponent();
         CameraText.Text = cameraStatus ?? "虚拟摄像头未启动";
         if (startupError is not null) EmptyText.Text = startupError;
@@ -71,6 +76,12 @@ public partial class MainWindow : Window
     }
     private void Tick()
     {
+        if (photos?.Latest is { } photo && photo.Sequence != shownPhoto)
+        {
+            shownPhoto = photo.Sequence;
+            try { Show(); new PhotoWindow(photo) { Owner = this }.Show(); }
+            catch (Exception ex) { StatusText.Text = "照片打开失败：" + ex.Message; }
+        }
         using var live = pipeline?.Acquire();
         var frame = frozen ?? live;
         if (frame is not null)
@@ -84,7 +95,10 @@ public partial class MainWindow : Window
             {
                 if (IsVisible)
                 {
-                    bitmap.WritePixels(new Int32Rect(0, 0, DisplayFrame.Width, DisplayFrame.Height), frame.Bgra, DisplayFrame.Width * 4, 0);
+                    if (bitmap is null || bitmap.PixelWidth != frame.Width || bitmap.PixelHeight != frame.Height)
+                        bitmap = new WriteableBitmap(frame.Width, frame.Height, 96, 96, PixelFormats.Bgra32, null);
+                    displayWidth = frame.Width; displayHeight = frame.Height;
+                    bitmap.WritePixels(new Int32Rect(0, 0, frame.Width, frame.Height), frame.Bgra, frame.Width * 4, 0);
                     PreviewImage.Source = bitmap; Empty.Visibility = Visibility.Collapsed;
                     shownSequence = frame.Sequence;
                     contentRect = new Rect(frame.Content[0], frame.Content[1], frame.Content[2], frame.Content[3]);
@@ -116,6 +130,18 @@ public partial class MainWindow : Window
         catch (Exception ex) { StatusText.Text = "设置保存失败：" + ex.Message; }
     }
     private void Pair_Click(object sender, RoutedEventArgs e) => new PairingWindow { Owner = this }.ShowDialog();
+    private async void CaptureHD_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            using var response = await client.PostAsync("http://127.0.0.1:29100/api/photo/request", null);
+            response.EnsureSuccessStatusCode();
+            StatusText.Text = "已请求手机拍照；若未出现照片，请查看手机提示或使用系统相机拍照";
+            statusTick = Stopwatch.GetTimestamp() + Stopwatch.Frequency * 8;
+        }
+        catch (Exception ex) { StatusText.Text = "拍照请求失败：" + ex.Message; statusTick = Stopwatch.GetTimestamp() + Stopwatch.Frequency * 3; }
+    }
     private void Settings_Click(object sender, RoutedEventArgs e) => new SettingsWindow(settings) { Owner = this }.ShowDialog();
     private void Resume() { frozen?.Dispose(); frozen = null; FrozenLabel.Visibility = Visibility.Collapsed; FreezeButton.Content = "冻结 Space"; }
     private void Rotate()
@@ -167,10 +193,10 @@ public partial class MainWindow : Window
     }
     private Point OutputPoint(Point p)
     {
-        var scale = Math.Min(Viewport.ActualWidth / DisplayFrame.Width, Viewport.ActualHeight / DisplayFrame.Height);
+        var scale = Math.Min(Viewport.ActualWidth / displayWidth, Viewport.ActualHeight / displayHeight);
         if (scale <= 0) return new Point();
-        return new Point((p.X - (Viewport.ActualWidth - DisplayFrame.Width * scale) / 2) / scale,
-            (p.Y - (Viewport.ActualHeight - DisplayFrame.Height * scale) / 2) / scale);
+        return new Point((p.X - (Viewport.ActualWidth - displayWidth * scale) / 2) / scale,
+            (p.Y - (Viewport.ActualHeight - displayHeight * scale) / 2) / scale);
     }
     private Point Fraction(Point p)
     {

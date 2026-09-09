@@ -31,6 +31,12 @@ static void verifyPortraitGeometry(){
                 minX=std::min(minX,x);maxX=std::max(maxX,x);minY=std::min(minY,y);maxY=std::max(maxY,y);
             }
             check(maxX-minX>100 && std::abs((maxX-minX)-(maxY-minY))<=2,"Circle distorted by native rotation");
+            // Desktop previews retain all source pixels, even when the webcam needs letterboxing.
+            check(dc_render(raw.data(),w,h,rotation,0,0,1,1,out.data(),rw,rh,bgra.data(),rect)>=0,"Native-size preview failed");
+            check(rect[0]==0 && rect[1]==0 && rect[2]==rw && rect[3]==rh,"Native-size preview lost resolution");
+            std::vector<uint8_t> camera(ow*oh*3/2);
+            check(dc_render(out.data(),rw,rh,0,0,0,1,1,camera.data(),ow,oh,nullptr,rect)>=0,"NV12-only camera output failed");
+            check(std::abs(rect[2]*rh-rect[3]*rw)<=2*std::max(rw,rh),"Camera output stretched native preview");
         }
     }
     std::puts("PASS: portrait/landscape circles preserve aspect ratio in all 4 rotations");

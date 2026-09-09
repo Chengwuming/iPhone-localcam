@@ -60,6 +60,9 @@ jobs:
       - name: Managed smoke tests
         run: dotnet run --project tests/LocalCam.SmokeTests -c Release
 
+      - name: Camera control tests
+        run: node --test tests/camera-controls.test.mjs
+
       - name: Publish desktop app (self-contained win-x64)
         run: dotnet publish apps/desktop/LocalCam.Desktop/LocalCam.Desktop.csproj -c Release -r win-x64 --self-contained true -o publish /p:DebugType=None /p:DebugSymbols=false /p:GitHubRepository=Chengwuming/iphone-localcam
 

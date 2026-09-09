@@ -20,9 +20,17 @@ internal sealed record ViewTransform(int Rotation = 0, double X = 0, double Y = 
 internal sealed class DisplayFrame : IDisposable
 {
     private int references = 1;
-    public const int Width = 1920, Height = 1080, BgraLength = Width * Height * 4, Nv12Length = Width * Height * 3 / 2;
-    public byte[] Bgra { get; } = ArrayPool<byte>.Shared.Rent(BgraLength);
-    public byte[] Nv12 { get; } = ArrayPool<byte>.Shared.Rent(Nv12Length);
+    public const int CameraWidth = 1920, CameraHeight = 1080;
+    public int Width { get; }
+    public int Height { get; }
+    public byte[] Bgra { get; }
+    public byte[] Nv12 { get; }
+    public DisplayFrame(int width, int height)
+    {
+        Width = width; Height = height;
+        Bgra = ArrayPool<byte>.Shared.Rent(width * height * 4);
+        Nv12 = ArrayPool<byte>.Shared.Rent(width * height * 3 / 2);
+    }
     public int[] Content { get; } = new int[4];
     public long Sequence { get; set; }
     public long CapturedTimestampUs { get; set; }
@@ -55,7 +63,7 @@ internal static class NativeVideo
     [DllImport("DeskCamVideo", CallingConvention = CallingConvention.Cdecl)]
     internal static extern int dc_render(byte[] input, int width, int height, int rotation,
         double x, double y, double cropWidth, double cropHeight, byte[] output, int outWidth, int outHeight,
-        byte[] bgra, int[] content);
+        byte[]? bgra, int[] content);
     internal static void Check(int hr) { if (hr < 0) Marshal.ThrowExceptionForHR(hr); }
 }
 internal sealed class VideoPipeline : IDisposable
@@ -92,12 +100,13 @@ internal sealed class VideoPipeline : IDisposable
     {
         fps = Volatile.Read(ref fps), processedFrames = Interlocked.Read(ref decodedFrames),
         processingMs = Volatile.Read(ref processingMs), decoder = decoderName, error,
-        outputWidth = DisplayFrame.Width, outputHeight = DisplayFrame.Height,
+        outputWidth = Volatile.Read(ref latest)?.Width, outputHeight = Volatile.Read(ref latest)?.Height,
+        cameraWidth = DisplayFrame.CameraWidth, cameraHeight = DisplayFrame.CameraHeight,
         frameAgeMs = lastDecoded == 0 ? (double?)null : Stopwatch.GetElapsedTime(Interlocked.Read(ref lastDecoded)).TotalMilliseconds
     };
     public string Description => error is not null ? "视频错误：" + error :
         !relay.IsPhoneConnected ? "等待手机 · 滚轮缩放，拖动平移 · Ctrl+Alt+C 全局复制" :
-        $"{decoderName} · {fps:F1} fps · 处理 {processingMs:F0} ms · 滚轮缩放 / 拖动平移";
+        $"{decoderName} · {fps:F1} fps · 原图 {Volatile.Read(ref latest)?.Width}×{Volatile.Read(ref latest)?.Height} · 处理 {processingMs:F0} ms";
     public byte[]? Snapshot()
     {
         using var frame = Acquire();
@@ -111,6 +120,8 @@ internal sealed class VideoPipeline : IDisposable
         IntPtr decoder = IntPtr.Zero;
         FrameRingProducer? publisher = null;
         byte[]? raw = null;
+        var cameraPixels = new byte[DisplayFrame.CameraWidth * DisplayFrame.CameraHeight * 3 / 2];
+        var cameraRect = new int[4];
         VideoPacket? previous = null;
         long window = Stopwatch.GetTimestamp(), count = 0;
         bool published = false;
@@ -148,17 +159,28 @@ internal sealed class VideoPipeline : IDisposable
                         (packet.KeyFrame ? 1 : 0) | (int)packet.ColorFlags, raw!, raw!.Length, out var produced));
                     if (produced == 0) continue;
                     var settings = Transform;
-                    DisplayFrame? next = new();
+                    int rotatedWidth = (settings.Rotation & 1) == 0 ? packet.Width : packet.Height;
+                    int rotatedHeight = (settings.Rotation & 1) == 0 ? packet.Height : packet.Width;
+                    DisplayFrame? next = new(Math.Max(16, (int)(rotatedWidth * settings.Width) & ~1),
+                        Math.Max(16, (int)(rotatedHeight * settings.Height) & ~1));
                     try
                     {
                         NativeVideo.Check(NativeVideo.dc_render(raw, packet.Width, packet.Height, settings.Rotation,
-                            settings.X, settings.Y, settings.Width, settings.Height, next.Nv12, DisplayFrame.Width,
-                            DisplayFrame.Height, next.Bgra, next.Content));
+                            settings.X, settings.Y, settings.Width, settings.Height, next.Nv12, next.Width,
+                            next.Height, next.Bgra, next.Content));
                         next.Sequence = ++sequence; next.CapturedTimestampUs = packet.TimestampUs;
                         next.ReceivedAt = DateTimeOffset.UtcNow; next.ConnectionId = packet.ConnectionId;
                         // Check session ownership again after potentially expensive native work.
                         if (packet.ConnectionId != relay.ConnectionId || !relay.IsPhoneConnected) continue;
-                        publisher.Publish(next.Nv12); published = true;
+                        if (next.Width == DisplayFrame.CameraWidth && next.Height == DisplayFrame.CameraHeight)
+                            publisher.Publish(next.Nv12);
+                        else
+                        {
+                            NativeVideo.Check(NativeVideo.dc_render(next.Nv12, next.Width, next.Height, 0, 0, 0, 1, 1,
+                                cameraPixels, DisplayFrame.CameraWidth, DisplayFrame.CameraHeight, null, cameraRect));
+                            publisher.Publish(cameraPixels);
+                        }
+                        published = true;
                         Interlocked.Exchange(ref lastDecoded, Stopwatch.GetTimestamp());
                         lock (gate) { var old = latest; latest = next; next = null; old?.Dispose(); }
                     }
