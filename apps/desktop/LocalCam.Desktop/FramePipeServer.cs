@@ -36,7 +36,7 @@ internal sealed class FramePipeServer : IDisposable
     {
         lock (frameLock)
         {
-            frame.CopyTo(latestFrame, 0);
+            Array.Copy(frame, latestFrame, latestFrame.Length);
             timestamp100Nanoseconds = timestamp;
             hasFrame = true;
         }
@@ -156,7 +156,7 @@ internal sealed class FramePipeServer : IDisposable
         }
     }
 
-    private static NamedPipeServerStream CreatePipe()
+    private NamedPipeServerStream CreatePipe()
     {
         var security = new PipeSecurity();
         security.AddAccessRule(new PipeAccessRule(
@@ -179,7 +179,7 @@ internal sealed class FramePipeServer : IDisposable
             PipeTransmissionMode.Byte,
             PipeOptions.Asynchronous,
             4096,
-            ResponseHeaderLength + 640 * 480 * 3 / 2,
+            ResponseHeaderLength + latestFrame.Length,
             security);
     }
 

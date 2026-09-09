@@ -66,6 +66,9 @@ public static class LocalNetworkAddressProvider
     };
 
     private static bool IsExcludedVirtualOrTunnelAdapter(LocalNetworkRoute route) =>
+        route.Address.GetAddressBytes() is [100, >= 64 and <= 127, _, _] or [198, 18 or 19, _, _] ||
+        route.Name.Contains("Tailscale", StringComparison.OrdinalIgnoreCase) ||
+        route.Name.Contains("Clash", StringComparison.OrdinalIgnoreCase) ||
         route.Name.Contains("VMware", StringComparison.OrdinalIgnoreCase) ||
         route.Description.Contains("VMware", StringComparison.OrdinalIgnoreCase) ||
         route.Description.Contains("Hyper-V", StringComparison.OrdinalIgnoreCase) ||

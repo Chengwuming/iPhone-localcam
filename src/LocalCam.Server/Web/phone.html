@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#111614">
+<link rel="manifest" href="/manifest.json"><link rel="icon" href="/icon.svg">
+<title>DeskCam</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#ecf4ef;background:#111614;color-scheme:dark}
+*{box-sizing:border-box}body{margin:0;padding:max(24px,env(safe-area-inset-top)) 22px max(24px,env(safe-area-inset-bottom));max-width:560px;margin:auto}
+header{display:flex;align-items:baseline;justify-content:space-between;margin:10px 0 28px}h1{font-size:30px;letter-spacing:-1px;margin:0}header span{color:#91a89a;font-size:13px}
+video{width:100%;height:40vh;object-fit:contain;background:#080b09;border-radius:14px}
+#status{font-size:18px;line-height:1.5;min-height:54px;margin:22px 0 16px}
+button{font:inherit;border:0;border-radius:12px;padding:17px;width:100%;font-weight:650;background:#b9edcf;color:#123b25}
+button:disabled{opacity:.45}button.stop{background:#35453c;color:#edf5ef}
+p.note{font-size:13px;color:#9cad9f;line-height:1.7}details{color:#8ba294;font-size:12px;margin-top:24px}pre{white-space:pre-wrap;line-height:1.8}
+a{color:#b9edcf}
+</style>
+</head>
+<body>
+<header><h1>DeskCam</h1><span>桌面 · 实时</span></header>
+<video id="camera" muted autoplay playsinline></video>
+<p id="status">正在检查连接…</p>
+<button id="start" disabled>开始拍摄</button>
+<p class="note">把手机放到支架上，保持此页面在前台。画面只传到你的电脑。<br>旋转、裁剪和截图在电脑上操作。</p>
+<p id="install" class="note" hidden>首次连接成功后，可以从 Safari 的分享菜单将 DeskCam 添加到主屏幕。</p>
+<details><summary>连接信息</summary><pre id="metrics">等待拍摄</pre><p>停止后可以正常使用手机；再次打开即可连接。</p></details>
+<script type="module" src="/phone.js"></script>
+</body></html>

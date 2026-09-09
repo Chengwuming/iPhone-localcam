@@ -6,6 +6,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Web\*" />
     <PackageReference Include="QRCoder" Version="1.7.0" />
   </ItemGroup>
 </Project>

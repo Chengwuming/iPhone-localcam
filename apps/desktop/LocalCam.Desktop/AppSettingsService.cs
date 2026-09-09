@@ -20,9 +20,11 @@ internal sealed record WindowPlacementSettings(
 internal sealed record LocalCamSettings(
     CloseBehavior CloseBehavior,
     bool StartWithWindows,
-    WindowPlacementSettings? WindowPlacement = null)
+    WindowPlacementSettings? WindowPlacement = null,
+    ViewTransform? View = null,
+    bool AlwaysOnTop = false)
 {
-    public static LocalCamSettings Default { get; } = new(CloseBehavior.Exit, false, null);
+    public static LocalCamSettings Default { get; } = new(CloseBehavior.MinimizeToTray, false, null);
 }
 
 internal sealed class AppSettingsService

@@ -114,7 +114,7 @@ bool SimpleFrameGenerator::EnsureLocalCamMapping()
     if (ring->magic != localcam::ipc::kMagic ||
         ring->majorVersion != localcam::ipc::kMajorVersion ||
         ring->slotCount != localcam::ipc::kSlotCount ||
-        ring->slotPayloadCapacity < 640u * 480u * 3u / 2u)
+        ring->slotPayloadCapacity < m_width * m_height * 3u / 2u)
     {
         UnmapViewOfFile(m_mappingView);
         CloseHandle(m_mapping);
@@ -128,9 +128,9 @@ bool SimpleFrameGenerator::EnsureLocalCamMapping()
 
 bool SimpleFrameGenerator::TryCopyLocalCamNv12(BYTE* pBuf, DWORD len, LONG pitch)
 {
-    constexpr DWORD sourceWidth = 640;
-    constexpr DWORD sourceHeight = 480;
-    constexpr DWORD sourcePayloadLength = sourceWidth * sourceHeight * 3 / 2;
+    const DWORD sourceWidth = m_width;
+    const DWORD sourceHeight = m_height;
+    const DWORD sourcePayloadLength = sourceWidth * sourceHeight * 3 / 2;
 
     if (pBuf == nullptr || pitch < static_cast<LONG>(sourceWidth) ||
         m_width != sourceWidth || m_height != sourceHeight ||
@@ -212,9 +212,9 @@ bool SimpleFrameGenerator::TryCopyLocalCamNv12(BYTE* pBuf, DWORD len, LONG pitch
 
 bool SimpleFrameGenerator::TryCopyLocalCamRgb32(BYTE* pBuf, DWORD len, LONG pitch)
 {
-    constexpr DWORD sourceWidth = 640;
-    constexpr DWORD sourceHeight = 480;
-    constexpr DWORD sourcePayloadLength = sourceWidth * sourceHeight * 3 / 2;
+    const DWORD sourceWidth = m_width;
+    const DWORD sourceHeight = m_height;
+    const DWORD sourcePayloadLength = sourceWidth * sourceHeight * 3 / 2;
 
     if (pBuf == nullptr || pitch < static_cast<LONG>(sourceWidth * 4) ||
         m_width != sourceWidth || m_height != sourceHeight ||
@@ -344,7 +344,7 @@ bool SimpleFrameGenerator::ReadPipeExact(BYTE* destination, DWORD length)
 bool SimpleFrameGenerator::ReadLocalCamPipeFrame()
 {
     constexpr DWORD responseMagic = 0x3143504C;
-    constexpr DWORD expectedPayloadLength = 640u * 480u * 3u / 2u;
+    const DWORD expectedPayloadLength = m_width * m_height * 3u / 2u;
 
     if (!EnsureLocalCamPipe())
     {
@@ -410,9 +410,9 @@ bool SimpleFrameGenerator::ReadLocalCamPipeFrame()
 
 bool SimpleFrameGenerator::TryCopyLocalCamPipe(BYTE* pBuf, DWORD len, LONG pitch)
 {
-    constexpr DWORD sourceWidth = 640;
-    constexpr DWORD sourceHeight = 480;
-    constexpr DWORD expectedPayloadLength = sourceWidth * sourceHeight * 3 / 2;
+    const DWORD sourceWidth = m_width;
+    const DWORD sourceHeight = m_height;
+    const DWORD expectedPayloadLength = sourceWidth * sourceHeight * 3 / 2;
     if (pBuf == nullptr || m_width != sourceWidth || m_height != sourceHeight)
     {
         return false;

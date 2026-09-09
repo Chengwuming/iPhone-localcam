@@ -15,6 +15,7 @@ public partial class App : System.Windows.Application
     private TrayIconService? trayIconService;
     private VirtualCameraSessionService? virtualCameraSession;
     private LocalCamServerInstance? server;
+    private VideoPipeline? video;
     private bool exitRequested;
     private bool ownsSingleInstanceMutex;
 
@@ -46,6 +47,9 @@ public partial class App : System.Windows.Application
         try
         {
             server = await LocalCamServerHost.StartAsync(cancellationToken: lifetime.Token);
+            video = new VideoPipeline(server.Relay, settingsService.Current.View ?? new ViewTransform());
+            server.Snapshot = video.Snapshot;
+            server.VideoStatus = () => video.Status;
         }
         catch (Exception exception) when (!lifetime.IsCancellationRequested)
         {
@@ -66,7 +70,7 @@ public partial class App : System.Windows.Application
                 : $"{startupError}\n虚拟摄像头启动失败：{exception.Message}";
         }
 
-        var mainWindow = new MainWindow(settingsService, virtualCameraSession?.StatusText, startupError);
+        var mainWindow = new MainWindow(settingsService, video, virtualCameraSession?.StatusText, startupError);
         MainWindow = mainWindow;
         trayIconService = new TrayIconService(mainWindow, settingsService, RequestExit);
         showRequestTask = ListenForShowRequestsAsync(lifetime.Token);
@@ -103,6 +107,7 @@ public partial class App : System.Windows.Application
         showRequestEvent?.Dispose();
         trayIconService?.Dispose();
         virtualCameraSession?.Dispose();
+        video?.Dispose();
         if (server is not null)
         {
             try

@@ -7,192 +7,128 @@ using LocalCam.Server.Streaming;
 
 namespace LocalCam.Server;
 
-public sealed class LocalCamServerInstance(WebApplication application) : IAsyncDisposable
+public sealed class LocalCamServerInstance(WebApplication application, FrameRelay relay) : IAsyncDisposable
 {
-    public Task WaitForShutdownAsync(CancellationToken cancellationToken = default) =>
-        application.WaitForShutdownAsync(cancellationToken);
-
-    public Task StopAsync(CancellationToken cancellationToken = default) =>
-        application.StopAsync(cancellationToken);
-
+    public FrameRelay Relay { get; } = relay;
+    public Func<byte[]?>? Snapshot { get; set; }
+    public Func<object>? VideoStatus { get; set; }
+    public Task WaitForShutdownAsync(CancellationToken ct = default) => application.WaitForShutdownAsync(ct);
+    public Task StopAsync(CancellationToken ct = default) => application.StopAsync(ct);
     public ValueTask DisposeAsync() => application.DisposeAsync();
 }
-
 public static class LocalCamServerHost
 {
     public const int BootstrapPort = 29100;
     public const int HttpsPort = 29101;
-
-    public static async Task<LocalCamServerInstance> StartAsync(
-        string[]? args = null,
-        CancellationToken cancellationToken = default)
+    public static async Task<LocalCamServerInstance> StartAsync(string[]? args = null, CancellationToken cancellationToken = default)
     {
-        var dataDirectory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "LocalCam");
+        var dataDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LocalCam");
         var addresses = LocalNetworkAddressProvider.GetUsableIPv4Addresses()
-            .Append(LocalNetworkAddressProvider.WindowsMobileHotspotDefaultAddress)
-            .Distinct()
-            .ToArray();
-        var certificateAuthority = new LocalCertificateAuthority(Path.Combine(dataDirectory, "certificates"));
-        var certificate = certificateAuthority.CreateServerCertificate(addresses);
-
+            .Append(LocalNetworkAddressProvider.WindowsMobileHotspotDefaultAddress).Distinct().ToArray();
+        var ca = new LocalCertificateAuthority(Path.Combine(dataDirectory, "certificates"));
+        var certificate = ca.CreateServerCertificate(addresses);
         var builder = WebApplication.CreateBuilder(args ?? []);
+        builder.Logging.SetMinimumLevel(LogLevel.Warning);
         builder.WebHost.ConfigureKestrel(options =>
         {
             options.ListenAnyIP(BootstrapPort);
             options.ListenAnyIP(HttpsPort, listen => listen.UseHttps(certificate));
         });
-
         var app = builder.Build();
         var pairing = new PairingManager(TimeProvider.System);
+        var devices = new DeviceStore(dataDirectory);
         var relay = new FrameRelay();
-        app.UseWebSockets();
+        var instance = new LocalCamServerInstance(app, relay);
+        var addressFile = Path.Combine(dataDirectory, "deskcam-address.txt");
+        string? preferred = File.Exists(addressFile) ? File.ReadAllText(addressFile).Trim() : null;
+        app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(10), KeepAliveTimeout = TimeSpan.FromSeconds(15) });
         app.Use(async (context, next) =>
         {
             context.Response.Headers.CacheControl = "no-store";
+            context.Response.Headers["Referrer-Policy"] = "no-referrer";
             await next();
         });
-
-        app.MapGet("/", (HttpContext context) =>
+        string? Preferred() => LocalNetworkAddressProvider.GetUsableRoutes().FirstOrDefault(r => r.Address.ToString() == preferred)?.Address.ToString()
+            ?? LocalNetworkAddressProvider.GetPreferredRoute()?.Address.ToString();
+        app.MapGet("/", (HttpContext c) => c.Request.IsHttps ? Results.Redirect("/phone") : Results.Content(WebPages.Bootstrap, "text/html; charset=utf-8"));
+        app.MapGet("/certificate/localcam-ca.cer", () => Results.File(ca.PublicCertificatePath, "application/x-x509-ca-cert", "LocalCam-Local-CA.cer"));
+        app.MapGet("/api/networks", (HttpContext c) => !IsLocal(c) ? Results.NotFound() :
+            Results.Json(LocalNetworkAddressProvider.GetUsableRoutes().Select(r => new
+            {
+                address = r.Address.ToString(), name = r.Name, connectionType = LocalNetworkAddressProvider.GetConnectionType(r),
+                isWindowsMobileHotspot = r.IsWindowsMobileHotspot, isPhoneWifiHotspot = r.IsPhoneWifiHotspot,
+                isRecommended = r.Address.ToString() == Preferred()
+            })));
+        app.MapGet("/api/session", (HttpContext c) =>
         {
-            if (!context.Request.IsHttps)
-            {
-                return Results.Content(WebPages.Bootstrap, "text/html; charset=utf-8");
-            }
-
-            return Results.NotFound();
-        });
-
-        app.MapGet("/monitor", (HttpContext context) =>
-            IsLocal(context) ? Results.Content(WebPages.Monitor, "text/html; charset=utf-8") : Results.NotFound());
-
-        app.MapGet("/certificate/localcam-ca.cer", () =>
-            Results.File(certificateAuthority.PublicCertificatePath, "application/x-x509-ca-cert", "LocalCam-Local-CA.cer"));
-
-        app.MapGet("/api/session", (HttpContext context) =>
-        {
-            if (!IsLocal(context))
-            {
-                return Results.NotFound();
-            }
-
-            var requestedAddress = context.Request.Query["address"].ToString();
-            var routes = LocalNetworkAddressProvider.GetUsableRoutes();
-            var selectedRoute = routes.FirstOrDefault(route => route.Address.ToString() == requestedAddress)
-                ?? LocalNetworkAddressProvider.GetPreferredRoute();
-            if (selectedRoute is null)
-            {
-                return Results.BadRequest("未检测到可用于本地连接的 IPv4 网络。请先连接同一 Wi-Fi、手机热点、Windows 移动热点或 USB 网络。\n");
-            }
-
+            if (!IsLocal(c)) return Results.NotFound();
+            var requested = c.Request.Query["address"].ToString();
+            var route = LocalNetworkAddressProvider.GetUsableRoutes().FirstOrDefault(r => r.Address.ToString() == requested)
+                ?? LocalNetworkAddressProvider.GetUsableRoutes().FirstOrDefault(r => r.Address.ToString() == Preferred());
+            if (route is null) return Results.BadRequest("未找到手机可达的 IPv4 网卡。");
+            preferred = route.Address.ToString();
+            Directory.CreateDirectory(dataDirectory);
+            File.WriteAllText(addressFile, preferred);
             var session = pairing.Create();
-            var baseUrl = $"https://{selectedRoute.Address}:{HttpsPort}";
-            var bootstrapUrl = $"http://{selectedRoute.Address}:{BootstrapPort}/";
-            var phoneUrl = $"{baseUrl}/phone?session={Uri.EscapeDataString(session.Id)}&token={Uri.EscapeDataString(session.Token)}";
+            var phoneUrl = $"https://{route.Address}:{HttpsPort}/phone#session={session.Id}&token={session.Token}";
+            var bootstrapUrl = $"http://{route.Address}:{BootstrapPort}/";
             return Results.Json(new
             {
-                bootstrapUrl,
-                bootstrapQr = QrCodeRenderer.RenderDataUrl(bootstrapUrl),
-                phoneUrl,
-                phoneQr = QrCodeRenderer.RenderDataUrl(phoneUrl),
-                connectionName = selectedRoute.Name,
-                connectionType = LocalNetworkAddressProvider.GetConnectionType(selectedRoute),
-                isWindowsMobileHotspot = selectedRoute.IsWindowsMobileHotspot,
-                isPhoneWifiHotspot = selectedRoute.IsPhoneWifiHotspot,
-                session.ExpiresAt
+                phoneUrl, phoneQr = QrCodeRenderer.RenderDataUrl(phoneUrl),
+                bootstrapUrl, bootstrapQr = QrCodeRenderer.RenderDataUrl(bootstrapUrl),
+                connectionName = route.Name, connectionType = LocalNetworkAddressProvider.GetConnectionType(route), session.ExpiresAt
             });
         });
-
-        app.MapGet("/api/networks", (HttpContext context) =>
+        app.MapGet("/phone", (HttpContext c) => c.Request.IsHttps ? Asset("phone.html", "text/html; charset=utf-8") : Results.NotFound());
+        app.MapGet("/phone.js", (HttpContext c) => c.Request.IsHttps ? Asset("phone.js", "text/javascript; charset=utf-8") : Results.NotFound());
+        app.MapGet("/manifest.json", (HttpContext c) => c.Request.IsHttps ? Asset("manifest.json", "application/manifest+json") : Results.NotFound());
+        app.MapGet("/icon.svg", () => Asset("icon.svg", "image/svg+xml"));
+        app.MapPost("/api/pair", async (HttpContext c) =>
         {
-            if (!IsLocal(context))
-            {
-                return Results.NotFound();
-            }
-
-            var routes = LocalNetworkAddressProvider.GetUsableRoutes();
-            var preferredAddress = LocalNetworkAddressProvider.GetPreferredRoute()?.Address;
-            return Results.Json(routes.Select(route => new
-            {
-                address = route.Address.ToString(),
-                name = route.Name,
-                connectionType = LocalNetworkAddressProvider.GetConnectionType(route),
-                isWindowsMobileHotspot = route.IsWindowsMobileHotspot,
-                isPhoneWifiHotspot = route.IsPhoneWifiHotspot,
-                isRecommended = route.Address.Equals(preferredAddress)
-            }));
+            if (!c.Request.IsHttps || !SameOrigin(c)) return Results.StatusCode(403);
+            var request = await c.Request.ReadFromJsonAsync<PairRequest>(c.RequestAborted);
+            if (request is null || !pairing.Consume(request.Session, request.Token)) return Results.StatusCode(403);
+            var credential = devices.Pair();
+            c.Response.Cookies.Append("deskcam", credential, new CookieOptions
+            { HttpOnly = true, Secure = true, SameSite = SameSiteMode.Strict, MaxAge = TimeSpan.FromDays(365), Path = "/" });
+            return Results.Json(new { paired = true });
         });
-
-        app.MapGet("/phone", (HttpContext context, string? session, string? token) =>
+        app.MapGet("/api/paired", (HttpContext c) => c.Request.IsHttps && devices.Validate(c.Request.Cookies["deskcam"]) ?
+            Results.Json(new { paired = true }) : Results.StatusCode(403));
+        app.MapPost("/api/unpair", (HttpContext c) =>
         {
-            if (!context.Request.IsHttps || !pairing.IsPending(session ?? string.Empty, token ?? string.Empty))
-            {
-                return Results.BadRequest("配对链接不存在、已过期或已被使用。请回到 Windows 页面重新生成二维码。");
-            }
-
-            return Results.Content(WebPages.Phone, "text/html; charset=utf-8");
+            if (!IsLocal(c)) return Results.NotFound();
+            devices.Revoke();
+            return Results.Ok();
         });
-
-        app.Map("/ws/phone", async context =>
+        app.Map("/ws/phone", async c =>
         {
-            var session = context.Request.Query["session"].ToString();
-            var token = context.Request.Query["token"].ToString();
-            if (!context.Request.IsHttps || !context.WebSockets.IsWebSocketRequest || !pairing.Consume(session, token))
-            {
-                context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                return;
-            }
-
-            using var socket = await context.WebSockets.AcceptWebSocketAsync();
-            relay.SetActivePhone(socket);
-            try
-            {
-                await relay.ReceivePhoneFramesAsync(socket, context.RequestAborted);
-            }
-            finally
-            {
-                relay.RemoveActivePhone(socket);
-            }
+            if (!c.Request.IsHttps || !SameOrigin(c) || !c.WebSockets.IsWebSocketRequest || !devices.Validate(c.Request.Cookies["deskcam"]))
+            { c.Response.StatusCode = 403; return; }
+            using var socket = await c.WebSockets.AcceptWebSocketAsync();
+            await relay.ReceivePhoneFramesAsync(socket, c.RequestAborted);
         });
-
-        app.Map("/ws/monitor", async context =>
+        app.MapGet("/api/status", (HttpContext c) => !IsLocal(c) ? Results.NotFound() : Results.Json(new
         {
-            if (!IsLocal(context) || !context.WebSockets.IsWebSocketRequest)
-            {
-                context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                return;
-            }
-
-            using var socket = await context.WebSockets.AcceptWebSocketAsync();
-            await relay.AddMonitorAsync(socket, context.RequestAborted);
-        });
-
-        app.MapGet("/api/status", (HttpContext context) =>
+            phoneConnected = relay.IsPhoneConnected, relay.FramesReceived, relay.BytesReceived, relay.LastFrameAt,
+            error = relay.Error, preferredAddress = Preferred(), video = instance.VideoStatus?.Invoke()
+        }));
+        app.MapGet("/api/frame.jpg", (HttpContext c) =>
         {
-            if (!IsLocal(context))
-            {
-                return Results.NotFound();
-            }
-
-            return Results.Json(new
-            {
-                relay.FramesReceived,
-                relay.LastFrameAt,
-                relay.MonitorCount,
-                phoneConnected = relay.IsPhoneConnected,
-                preferredAddress = LocalNetworkAddressProvider.GetPreferredRoute()?.Address.ToString(),
-                ports = new { BootstrapPort, HttpsPort }
-            });
+            if (!IsLocal(c)) return Results.NotFound();
+            var bytes = instance.Snapshot?.Invoke();
+            return bytes is null ? Results.StatusCode(503) : Results.File(bytes, "image/jpeg");
         });
-
         await app.StartAsync(cancellationToken);
-        return new LocalCamServerInstance(app);
+        return instance;
     }
-
-    private static bool IsLocal(HttpContext context)
+    private static IResult Asset(string name, string type)
     {
-        var remote = context.Connection.RemoteIpAddress;
-        return remote is not null && IPAddress.IsLoopback(remote);
+        var stream = typeof(LocalCamServerHost).Assembly.GetManifestResourceStream("LocalCam.Server.Web." + name);
+        return stream is null ? Results.NotFound() : Results.Stream(stream, type);
     }
+    private static bool IsLocal(HttpContext c) => c.Connection.RemoteIpAddress is { } ip && IPAddress.IsLoopback(ip);
+    private static bool SameOrigin(HttpContext c) => Uri.TryCreate(c.Request.Headers.Origin, UriKind.Absolute, out var origin)
+        && origin.Scheme == "https" && origin.Authority.Equals(c.Request.Host.Value, StringComparison.OrdinalIgnoreCase);
+    private sealed record PairRequest(string Session, string Token);
 }

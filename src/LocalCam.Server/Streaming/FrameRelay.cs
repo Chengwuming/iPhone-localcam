@@ -1,184 +1,81 @@
-using System.Collections.Concurrent;
 using System.Net.WebSockets;
-using System.Text.Json;
-
+using System.Text;
+using System.Threading.Channels;
 namespace LocalCam.Server.Streaming;
-
 public sealed class FrameRelay
 {
-    private const int MaximumFrameSize = 2 * 1024 * 1024;
-    private readonly ConcurrentDictionary<Guid, WebSocket> monitors = new();
-    private readonly object phoneLock = new();
+    private readonly Channel<VideoPacket> packets = Channel.CreateBounded<VideoPacket>(new BoundedChannelOptions(3)
+    { FullMode = BoundedChannelFullMode.Wait, SingleReader = false, SingleWriter = false });
     private WebSocket? activePhone;
-    private long framesReceived;
-    private DateTimeOffset? lastFrameAt;
-
+    private long connectionId, framesReceived, bytesReceived, lastFrameTicks;
+    private int requestKey;
+    public ChannelReader<VideoPacket> Packets => packets.Reader;
+    public bool IsPhoneConnected => activePhone?.State == WebSocketState.Open;
+    public long ConnectionId => Interlocked.Read(ref connectionId);
     public long FramesReceived => Interlocked.Read(ref framesReceived);
-    public DateTimeOffset? LastFrameAt => lastFrameAt;
-    public int MonitorCount => monitors.Count;
-    public bool IsPhoneConnected
-    {
-        get
-        {
-            lock (phoneLock)
-            {
-                return activePhone?.State == WebSocketState.Open;
-            }
-        }
-    }
-
-    public void SetActivePhone(WebSocket phone)
-    {
-        lock (phoneLock)
-        {
-            activePhone = phone;
-        }
-    }
-
-    public void RemoveActivePhone(WebSocket phone)
-    {
-        lock (phoneLock)
-        {
-            if (ReferenceEquals(activePhone, phone))
-            {
-                activePhone = null;
-            }
-        }
-    }
-
+    public long BytesReceived => Interlocked.Read(ref bytesReceived);
+    public DateTimeOffset? LastFrameAt => Interlocked.Read(ref lastFrameTicks) is > 0 and var ticks ? new DateTimeOffset(ticks, TimeSpan.Zero) : null;
+    public string? Error { get; private set; }
+    public void RequestKeyFrame() => Interlocked.Exchange(ref requestKey, 1);
     public async Task ReceivePhoneFramesAsync(WebSocket phone, CancellationToken cancellationToken)
     {
+        var previous = Interlocked.Exchange(ref activePhone, phone);
+        previous?.Abort();
+        var id = Interlocked.Increment(ref connectionId);
+        while (packets.Reader.TryRead(out _)) { }
+        Error = null;
+        bool waitingForKey = true;
+        uint? stream = null, sequence = null;
         var buffer = new byte[64 * 1024];
-        while (phone.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
-        {
-            await using var data = new MemoryStream();
-            WebSocketReceiveResult result;
-            do
-            {
-                result = await phone.ReceiveAsync(buffer, cancellationToken);
-                if (result.MessageType == WebSocketMessageType.Close)
-                {
-                    await phone.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "Phone disconnected", CancellationToken.None);
-                    return;
-                }
-
-                if (data.Length + result.Count > MaximumFrameSize)
-                {
-                    await phone.CloseAsync(WebSocketCloseStatus.MessageTooBig, "Frame exceeds 2 MiB", CancellationToken.None);
-                    return;
-                }
-
-                await data.WriteAsync(buffer.AsMemory(0, result.Count), cancellationToken);
-            }
-            while (!result.EndOfMessage);
-
-            if (result.MessageType != WebSocketMessageType.Binary || data.Length == 0)
-            {
-                continue;
-            }
-
-            var frame = data.ToArray();
-            Interlocked.Increment(ref framesReceived);
-            lastFrameAt = DateTimeOffset.UtcNow;
-            await BroadcastFrameAsync(frame, cancellationToken);
-        }
-    }
-
-    public async Task AddMonitorAsync(WebSocket monitor, CancellationToken cancellationToken)
-    {
-        var id = Guid.NewGuid();
-        monitors[id] = monitor;
-        var buffer = new byte[4096];
+        using var message = new MemoryStream();
         try
         {
-            while (monitor.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
+            while (phone.State == WebSocketState.Open && id == ConnectionId)
             {
-                var result = await monitor.ReceiveAsync(buffer, cancellationToken);
-                if (result.MessageType == WebSocketMessageType.Close)
+                message.SetLength(0);
+                WebSocketReceiveResult result;
+                do
                 {
-                    await monitor.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "Monitor closed", CancellationToken.None);
-                    break;
-                }
-
-                if (result.MessageType == WebSocketMessageType.Text && result.EndOfMessage)
+                    result = await phone.ReceiveAsync(buffer, cancellationToken).ConfigureAwait(false);
+                    if (result.MessageType == WebSocketMessageType.Close) return;
+                    if (message.Length + result.Count > VideoProtocol.MaximumMessageSize) throw new InvalidDataException("视频包过大");
+                    message.Write(buffer, 0, result.Count);
+                } while (!result.EndOfMessage);
+                if (id != ConnectionId) return;
+                if (result.MessageType != WebSocketMessageType.Binary) continue;
+                var packet = VideoProtocol.Parse(message.GetBuffer().AsSpan(0, (int)message.Length), id);
+                if (stream != packet.StreamId || (sequence.HasValue && packet.Sequence != unchecked(sequence.Value + 1)))
+                    waitingForKey = true;
+                stream = packet.StreamId;
+                sequence = packet.Sequence;
+                if (Interlocked.Exchange(ref requestKey, 0) != 0) waitingForKey = true;
+                if (waitingForKey && !packet.KeyFrame)
                 {
-                    await ForwardControlAsync(buffer.AsMemory(0, result.Count), cancellationToken);
+                    await SendKeyRequest(phone, cancellationToken).ConfigureAwait(false);
+                    continue;
                 }
+                if (!packets.Writer.TryWrite(packet))
+                {
+                    while (packets.Reader.TryRead(out _)) { }
+                    waitingForKey = true;
+                    if (packet.KeyFrame) { packets.Writer.TryWrite(packet); waitingForKey = false; }
+                    else await SendKeyRequest(phone, cancellationToken).ConfigureAwait(false);
+                }
+                else waitingForKey = false;
+                Interlocked.Increment(ref framesReceived);
+                Interlocked.Add(ref bytesReceived, packet.Data.Length);
+                Interlocked.Exchange(ref lastFrameTicks, DateTimeOffset.UtcNow.Ticks);
             }
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+        catch (Exception ex) when (ex is WebSocketException or InvalidDataException)
+        { if (id == ConnectionId) Error = ex.Message; }
         finally
         {
-            monitors.TryRemove(id, out _);
+            Interlocked.CompareExchange(ref activePhone, null, phone);
+            phone.Abort();
         }
     }
-
-    private async Task BroadcastFrameAsync(byte[] frame, CancellationToken cancellationToken)
-    {
-        foreach (var monitor in monitors.ToArray())
-        {
-            if (monitor.Value.State != WebSocketState.Open)
-            {
-                monitors.TryRemove(monitor.Key, out _);
-                continue;
-            }
-
-            try
-            {
-                await monitor.Value.SendAsync(frame, WebSocketMessageType.Binary, true, cancellationToken);
-            }
-            catch (WebSocketException)
-            {
-                monitors.TryRemove(monitor.Key, out _);
-            }
-        }
-    }
-
-    private async Task ForwardControlAsync(ReadOnlyMemory<byte> message, CancellationToken cancellationToken)
-    {
-        if (!IsSupportedControl(message.Span))
-        {
-            return;
-        }
-
-        WebSocket? phone;
-        lock (phoneLock)
-        {
-            phone = activePhone;
-        }
-
-        if (phone?.State == WebSocketState.Open)
-        {
-            await phone.SendAsync(message, WebSocketMessageType.Text, true, cancellationToken);
-        }
-    }
-
-    private static bool IsSupportedControl(ReadOnlySpan<byte> message)
-    {
-        try
-        {
-            using var document = JsonDocument.Parse(message.ToArray());
-            if (!document.RootElement.TryGetProperty("type", out var type))
-            {
-                return false;
-            }
-
-            if (type.ValueEquals("camera.switch") && document.RootElement.TryGetProperty("facing", out var facing))
-            {
-                return facing.ValueEquals("user") || facing.ValueEquals("environment");
-            }
-
-            if (type.ValueEquals("camera.zoom") && document.RootElement.TryGetProperty("zoom", out var zoom))
-            {
-                return zoom.TryGetDouble(out var zoomValue) && zoomValue is >= 0.5 and <= 10;
-            }
-
-            return type.ValueEquals("capture.fps") &&
-                   document.RootElement.TryGetProperty("fps", out var fps) &&
-                   fps.TryGetInt32(out var value) && value is 15 or 20 or 30;
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
-    }
+    private static Task SendKeyRequest(WebSocket phone, CancellationToken ct) =>
+        phone.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes("{\"type\":\"keyframe\"}")), WebSocketMessageType.Text, true, ct);
 }
