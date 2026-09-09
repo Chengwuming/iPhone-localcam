@@ -396,7 +396,7 @@ init();
 function cameraState() {
     const track = stream?.getVideoTracks()[0], s = track?.getSettings() || {}, c = track?.getCapabilities?.() || {};
     return { quality: preferences.quality, focus: preferences.focus, busy: photoBusy || starting || commandBusy,
-        acquiring: photoBusy || starting, ready: running, zoomRange: c.zoom || null, focusRange: c.focusDistance || null, canLock: canLockFocus(track), focusLocked: preferences.focus !== 'auto' && ['none','manual'].includes(s.focusMode),
+        acquiring: photoBusy || starting, ready: running, zoomRange: c.zoom || null, focusRange: c.focusDistance || null, canLock: canLockFocus(track), focusLocked: ['none','manual'].includes(s.focusMode),
         settings: { width:s.width,height:s.height,frameRate:s.frameRate,zoom:s.zoom,focusDistance:s.focusDistance,focusMode:s.focusMode },
         photoStatus: photoStatus.textContent };
 }
