@@ -6,6 +6,8 @@ test('ignored zoom and missing focus readback are not reported as working', asyn
     const track = { applyConstraints: async () => {}, getSettings: () => ({ zoom: 1 }), getCapabilities: () => ({}) };
     await assert.rejects(applyVerified(track, { zoom: 2 }), /未采用/);
     await assert.rejects(applyVerified(track, { focusDistance: .5 }), /无法确认/);
+    track.getCapabilities = () => ({ zoom: { step: 1 } });
+    await assert.rejects(applyVerified(track, { zoom: 2 }), /未采用/);
     assert.equal(!!adjustable({ min: 1, max: 1 }), false);
 });
 test('manual focus works without a focusMode capability when distance is applied', async () => {

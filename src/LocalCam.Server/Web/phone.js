@@ -215,7 +215,7 @@ function showCameraSettings(track) {
     }
     document.querySelector('#focus-status').textContent = !adjustable(c.focusDistance) ?
         'Safari 未开放手动调焦。' + (s.focusMode ? '当前模式：' + s.focusMode : '自动对焦由系统管理，浏览器无法确认是否合焦。') :
-        '实际焦点值：' + (s.focusDistance ?? '未返回') + '；请放大纸面检查清晰度。';
+        '实际模式：' + (s.focusMode ?? '浏览器未返回') + '；焦点值：' + (s.focusDistance ?? '未返回') + '。请放大纸面检查清晰度。';
     zoom.disabled = !adjustable(c.zoom);
     if (adjustable(c.zoom)) {
         zoom.min = c.zoom.min; zoom.max = c.zoom.max; zoom.step = c.zoom.step || .1;
@@ -234,9 +234,14 @@ async function restoreCameraSettings(track) {
         changes.focusDistance = Math.min(c.focusDistance.max, Math.max(c.focusDistance.min, preferences.distance));
     } else if (preferences.focus === 'auto' && c.focusMode?.includes('continuous')) changes.focusMode = 'continuous';
     else if (preferences.focus === 'none' && c.focusMode?.includes('none')) changes.focusMode = 'none';
+    let restoreError;
     try { if (Object.keys(changes).length) await applyVerified(track, changes); }
-    catch (error) { photoStatus.textContent = '部分相机设置未确认生效：' + errorText(error); }
+    catch (error) { restoreError = '设置未确认生效：' + errorText(error); }
     showCameraSettings(track);
+    if (restoreError) {
+        if ('zoom' in changes) document.querySelector('#zoom-status').textContent += ' ' + restoreError;
+        if ('focusMode' in changes || 'focusDistance' in changes) document.querySelector('#focus-status').textContent += ' ' + restoreError;
+    }
 }
 quality.onchange = () => {
     preferences.quality = quality.value; savePreferences();

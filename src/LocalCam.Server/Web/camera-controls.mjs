@@ -11,7 +11,7 @@ export async function applyVerified(track, changes) {
     const actual = track.getSettings(), capabilities = track.getCapabilities?.() || {};
     for (const [key, value] of Object.entries(changes)) {
         if (actual[key] === undefined) throw new Error('浏览器没有返回 ' + key + ' 的实际值，无法确认生效');
-        const tolerance = Math.max(Number(capabilities[key]?.step) || 0, .01);
+        const tolerance = Math.max((Number(capabilities[key]?.step) || 0) / 2, .0001);
         if (typeof value === 'number' ? Math.abs(actual[key] - value) > tolerance : actual[key] !== value)
             throw new Error('相机未采用请求的 ' + key + '，实际值为 ' + actual[key]);
     }
