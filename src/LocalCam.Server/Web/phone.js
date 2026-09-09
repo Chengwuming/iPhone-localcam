@@ -4,7 +4,7 @@ const button = document.querySelector('#start');
 const metrics = document.querySelector('#metrics');
 let stream, socket, encoder, wakeLock, callbackId, retryTimer, watchdog;
 let running = false, wanted = false, starting = false, generation = 0, streamId = 0;
-let sequence = 0, forceKey = true, discardUntilKey = false, lastCapture = 0;
+let sequence = 0, forceKey = true, discardUntilKey = false, colorFlags = 0;
 let width = 0, height = 0, sent = 0, byteCount = 0, skips = 0, startedAt = 0, windowStart = 0, lastOutput = 0;
 let maxEncodeMs = 0;
 const pending = new Map();
@@ -45,32 +45,31 @@ function sendChunk(chunk, metadata, gen) {
     if (socket.bufferedAmount > 131072) { skips++; discardUntilKey = true; forceKey = true; return; }
     if (discardUntilKey && chunk.type !== 'key') { skips++; forceKey = true; return; }
     discardUntilKey = false;
+    if (metadata?.decoderConfig) {
+        const c = metadata.decoderConfig;
+        colorFlags = (['smpte170m', 'bt470bg'].includes(c.colorSpace?.matrix) ? 2 : 0) | (c.colorSpace?.fullRange ? 4 : 0);
+        metrics.dataset.codec = c.codec + ' · ' + (c.colorSpace?.matrix || '默认色彩');
+    }
     const packet = new Uint8Array(32 + chunk.byteLength);
     const header = new DataView(packet.buffer);
     header.setUint32(0, 0x31564344, true);
     header.setUint16(4, width, true); header.setUint16(6, height, true);
     header.setUint32(8, streamId, true); header.setUint32(12, seq, true);
     header.setBigInt64(16, BigInt(chunk.timestamp), true);
-    header.setUint32(24, chunk.type === 'key' ? 1 : 0, true);
+    header.setUint32(24, (chunk.type === 'key' ? 1 : 0) | colorFlags, true);
     header.setUint32(28, chunk.byteLength, true);
     chunk.copyTo(packet.subarray(32));
     socket.send(packet);
     sent++; byteCount += packet.length;
     if (sent === 1) setStatus('正在传输到电脑');
-    if (metadata?.decoderConfig) {
-        const c = metadata.decoderConfig;
-        metrics.dataset.codec = c.codec + ' · ' + (c.colorSpace?.matrix || '默认色彩');
-    }
 }
 function capture(now) {
     if (!running) return;
     callbackId = camera.requestVideoFrameCallback(capture);
-    if (now - lastCapture < 48) return;
     if (encoder.encodeQueueSize >= 2 || socket.bufferedAmount > 98304) { skips++; return; }
     if (camera.videoWidth !== width || camera.videoHeight !== height) {
         reconnect('画面方向已变化'); return;
     }
-    lastCapture = now;
     const timestamp = Math.round(now * 1000);
     let frame;
     try {
@@ -126,7 +125,7 @@ async function begin() {
             connection.onclose = () => { clearTimeout(timeout); reject(new Error('配对已失效或电脑拒绝连接')); };
         });
         if (gen !== generation || !wanted) return;
-        sequence = 0; streamId++; forceKey = true; discardUntilKey = false; lastCapture = 0;
+        sequence = 0; streamId++; forceKey = true; discardUntilKey = false; colorFlags = 0;
         sent = 0; byteCount = 0; skips = 0; maxEncodeMs = 0;
         startedAt = windowStart = lastOutput = performance.now();
         encoder = new VideoEncoder({
@@ -176,6 +175,7 @@ document.addEventListener('visibilitychange', () => {
     } else if (wanted) begin();
 });
 window.addEventListener('pagehide', () => teardown());
+window.addEventListener('hashchange', () => { if (location.hash.includes('session=')) { teardown(); init(); } });
 async function init() {
     try {
         const pair = new URLSearchParams(location.hash.slice(1));

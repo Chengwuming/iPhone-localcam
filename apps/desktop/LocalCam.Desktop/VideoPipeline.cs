@@ -145,7 +145,7 @@ internal sealed class VideoPipeline : IDisposable
                     previous = packet;
                     var started = Stopwatch.GetTimestamp();
                     NativeVideo.Check(NativeVideo.dc_decode(decoder, packet.Data, packet.Data.Length, packet.TimestampUs,
-                        packet.KeyFrame ? 1 : 0, raw!, raw!.Length, out var produced));
+                        (packet.KeyFrame ? 1 : 0) | (int)packet.ColorFlags, raw!, raw!.Length, out var produced));
                     if (produced == 0) continue;
                     var settings = Transform;
                     DisplayFrame? next = new();

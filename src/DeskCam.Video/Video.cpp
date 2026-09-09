@@ -146,7 +146,7 @@ struct Decoder {
         }
         return E_UNEXPECTED;
     }
-    HRESULT decode(const uint8_t* data,int length,int64_t timestamp,bool key,uint8_t* destination,int capacity,int* produced) {
+    HRESULT decode(const uint8_t* data,int length,int64_t timestamp,int flags,uint8_t* destination,int capacity,int* produced) {
         *produced=0;
         ComPtr<IMFSample> sample;CHECK(MFCreateSample(&sample));
         ComPtr<IMFMediaBuffer> buffer;CHECK(MFCreateMemoryBuffer(length,&buffer));
@@ -154,11 +154,33 @@ struct Decoder {
         std::memcpy(memory,data,length);buffer->Unlock();CHECK(buffer->SetCurrentLength(length));
         CHECK(sample->AddBuffer(buffer.Get()));CHECK(sample->SetSampleTime(timestamp*10));
         CHECK(sample->SetSampleDuration(500000));
-        if(key)sample->SetUINT32(MFSampleExtension_CleanPoint,TRUE);
+        if(flags&1)sample->SetUINT32(MFSampleExtension_CleanPoint,TRUE);
         CHECK(transform->ProcessInput(0,sample.Get(),0));
         bool ready=false;CHECK(output(destination,capacity,ready));
+        if(ready && (flags&6)) normalizeColor(destination,flags);
         *produced=ready?1:0;
         return S_OK;
+    }
+    void normalizeColor(uint8_t* frame,int flags) {
+        auto clamp=[](int value){return static_cast<uint8_t>(std::clamp(value,0,255));};
+        if(flags&4) {
+            for(int i=0;i<width*height;++i)frame[i]=static_cast<uint8_t>(16+(frame[i]*219+127)/255);
+            for(int i=width*height;i<width*height*3/2;++i)frame[i]=clamp(128+((static_cast<int>(frame[i])-128)*224)/255);
+        }
+        if(!(flags&2))return;
+        // Normalize BT.601 to BT.709 once, keeping downstream preview and both camera formats consistent.
+        for(int y=0;y<height;y+=2)for(int x=0;x<width;x+=2){
+            int uv=width*height+(y/2)*width+x,u=frame[uv]-128,v=frame[uv+1]-128;
+            int rs=0,gs=0,bs=0;
+            for(int dy=0;dy<2;++dy)for(int dx=0;dx<2;++dx){
+                int at=(y+dy)*width+x+dx,c=std::max(0,static_cast<int>(frame[at])-16);
+                int r=clamp((298*c+409*v+128)>>8),g=clamp((298*c-100*u-208*v+128)>>8),b=clamp((298*c+516*u+128)>>8);
+                frame[at]=clamp(((47*r+157*g+16*b+128)>>8)+16);rs+=r;gs+=g;bs+=b;
+            }
+            int r=rs/4,g=gs/4,b=bs/4;
+            frame[uv]=clamp(((-26*r-87*g+112*b+128)>>8)+128);
+            frame[uv+1]=clamp(((112*r-102*g-10*b+128)>>8)+128);
+        }
     }
     ~Decoder(){
         if(transform)transform->ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH,0);
@@ -176,7 +198,7 @@ API int dc_create(int w,int h,void** handle,int* hardware) {
 }
 API int dc_decode(void* handle,const uint8_t* data,int length,int64_t timestamp,int key,uint8_t* out,int capacity,int* produced) {
     if(!handle||!data||!out||!produced||length<=0||length>2*1024*1024||timestamp<0||timestamp>INT64_MAX/10)return E_INVALIDARG;
-    return static_cast<Decoder*>(handle)->decode(data,length,timestamp,key!=0,out,capacity,produced);
+    return static_cast<Decoder*>(handle)->decode(data,length,timestamp,key,out,capacity,produced);
 }
 API void dc_destroy(void* handle){delete static_cast<Decoder*>(handle);}
 static uint8_t clampByte(int v){return static_cast<uint8_t>(std::clamp(v,0,255));}

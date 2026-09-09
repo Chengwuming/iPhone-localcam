@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 namespace LocalCam.Server.Streaming;
 public sealed record VideoPacket(int Width, int Height, uint StreamId, uint Sequence, long TimestampUs,
-    bool KeyFrame, byte[] Data, long ConnectionId, long ReceivedAt);
+    bool KeyFrame, byte[] Data, long ConnectionId, long ReceivedAt, uint ColorFlags = 0);
 public static class VideoProtocol
 {
     public const int HeaderSize = 32;
@@ -22,6 +22,7 @@ public static class VideoProtocol
         return new(width, height, BinaryPrimitives.ReadUInt32LittleEndian(bytes[8..]),
             BinaryPrimitives.ReadUInt32LittleEndian(bytes[12..]), timestamp,
             (BinaryPrimitives.ReadUInt32LittleEndian(bytes[24..]) & 1) != 0,
-            bytes[HeaderSize..].ToArray(), connectionId, System.Diagnostics.Stopwatch.GetTimestamp());
+            bytes[HeaderSize..].ToArray(), connectionId, System.Diagnostics.Stopwatch.GetTimestamp(),
+            BinaryPrimitives.ReadUInt32LittleEndian(bytes[24..]) & 6);
     }
 }
