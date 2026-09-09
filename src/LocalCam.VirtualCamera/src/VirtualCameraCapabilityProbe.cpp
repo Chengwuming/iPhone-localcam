@@ -6,6 +6,7 @@
 #include <wrl/client.h>
 
 #include <cstdlib>
+#include <chrono>
 #include <iostream>
 
 using Microsoft::WRL::ComPtr;
@@ -58,6 +59,7 @@ bool VerifyContinuity(IMFSourceReader* reader, int requestedFrames)
     int frames = 0;
     int blackFrames = 0;
     int attempts = 0;
+    const auto started = std::chrono::steady_clock::now();
     while (frames < requestedFrames && attempts < requestedFrames * 3)
     {
         ++attempts;
@@ -91,9 +93,11 @@ bool VerifyContinuity(IMFSourceReader* reader, int requestedFrames)
         Sleep(10);
     }
 
+    const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+    const double fps = frames / seconds;
     std::cout << "CONTINUITY frames=" << frames
-              << ", fallback-black=" << blackFrames << std::endl;
-    return frames == requestedFrames && blackFrames == 0;
+              << ", fallback-black=" << blackFrames << ", delivery-fps=" << fps << std::endl;
+    return frames == requestedFrames && blackFrames == 0 && (requestedFrames < 30 || (fps >= 5 && fps <= 40));
 }
 
 bool EnumerateVideoCaptureDevices(int continuityFrames)

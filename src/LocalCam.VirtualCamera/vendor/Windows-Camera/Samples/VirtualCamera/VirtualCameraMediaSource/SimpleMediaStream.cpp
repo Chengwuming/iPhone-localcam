@@ -199,8 +199,17 @@ namespace winrt::WindowsSample::implementation
 
         if (m_streamState != MF_STREAM_STATE_RUNNING)
         {
-            RETURN_HR_MSG(MF_E_INVALIDREQUEST, "Stream is not in running state, state:%d, selected: %d", m_streamState, m_bSelected);
+            return MF_E_MEDIA_SOURCE_WRONGSTATE;
         }
+
+        // A live camera must pace delivery: Frame Server may request as quickly
+        // as possible. Bound this synchronous sample path to one 30 fps period,
+        // without accumulating catch-up frames after a delayed consumer.
+        constexpr LONGLONG frameDuration = 333333;
+        auto now = MFGetSystemTime();
+        if (m_nextSampleTime > now && m_nextSampleTime - now <= frameDuration)
+            Sleep(static_cast<DWORD>((m_nextSampleTime - now + 9999) / 10000));
+        m_nextSampleTime = MFGetSystemTime() + frameDuration;
 
         RETURN_IF_FAILED(m_spSampleAllocator->AllocateSample(&sample));
         RETURN_IF_FAILED(sample->GetBufferByIndex(0, &outputBuffer));
@@ -217,7 +226,7 @@ namespace winrt::WindowsSample::implementation
         RETURN_IF_FAILED(buffer2D->Unlock2D());
 
         RETURN_IF_FAILED(sample->SetSampleTime(MFGetSystemTime()));
-        RETURN_IF_FAILED(sample->SetSampleDuration(333333));
+        RETURN_IF_FAILED(sample->SetSampleDuration(frameDuration));
         if (pToken != nullptr)
         {
             RETURN_IF_FAILED(sample->SetUnknown(MFSampleExtension_Token, pToken));
@@ -456,6 +465,7 @@ namespace winrt::WindowsSample::implementation
     _Requires_lock_held_(m_Lock)
     HRESULT SimpleMediaStream::StopInternal(bool bSendEvent)
     {
+        m_nextSampleTime = 0;
         // Set stream state
         m_streamState = MF_STREAM_STATE_STOPPED;
 

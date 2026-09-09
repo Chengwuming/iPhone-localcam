@@ -68,6 +68,7 @@ namespace winrt::WindowsSample::implementation
         uint32_t m_rgbMask = KSPROPERTY_SIMPLEMEDIASOURCE_CUSTOMCONTROL_COLORMODE_BLUE;
 
         DWORD m_dwStreamId = 0;
+        LONGLONG m_nextSampleTime = 0;
         MFSampleAllocatorUsage m_allocatorUsage;
     };
 }
