@@ -24,7 +24,8 @@ public partial class MainWindow : Window
     private CameraPanel? cameraPanel;
     private PhotoWindow? photoWindow;
     private bool inspecting, sidebarOpen, phoneReady, toolsShown = true;
-    private long toolsUntil;
+    private long toolsUntil, noticeUntil;
+    private string? lastCameraResult;
     [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
     private Point inspectPoint = new(.5,.5);
     private long lastInspect;
@@ -92,8 +93,10 @@ public partial class MainWindow : Window
     private void Tick()
     {
         UpdateTools();
+        Notice.Visibility=!clean&&Stopwatch.GetTimestamp()<noticeUntil?Visibility.Visible:Visibility.Collapsed;
         if (camera?.Snapshot is { } cameraState)
         {
+            if(lastCameraResult!=cameraState.Result){lastCameraResult=cameraState.Result;if(cameraState.Result.StartsWith("操作失败")||cameraState.Result.StartsWith("手机未完成"))Notify(cameraState.Result);}
             bool ready = DateTimeOffset.UtcNow-cameraState.UpdatedAt<TimeSpan.FromSeconds(3) && !cameraState.Pending &&
                 cameraState.State is {} cs && cs.TryGetProperty("ready",out var rd) && rd.ValueKind==System.Text.Json.JsonValueKind.True &&
                 (!cs.TryGetProperty("busy",out var busy)||busy.ValueKind!=System.Text.Json.JsonValueKind.True);
@@ -204,6 +207,7 @@ public partial class MainWindow : Window
         InspectButton.Content=inspecting?"关闭检查":"细字检查";
         AutomationProperties.SetName(InspectButton,inspecting?"关闭细字检查 I":"细字检查 I");
     }
+    private void Notify(string text){NoticeText.Text=text;noticeUntil=Stopwatch.GetTimestamp()+Stopwatch.Frequency*4;Notice.Visibility=clean?Visibility.Collapsed:Visibility.Visible;}
     private void ShowTools(){toolsUntil=Stopwatch.GetTimestamp()+Stopwatch.Frequency*3;UpdateTools();}
     private void Window_PreviewMouseMove(object sender,System.Windows.Input.MouseEventArgs e)
     {
@@ -213,6 +217,7 @@ public partial class MainWindow : Window
     private void UpdateTools()
     {
         bool show=!clean&&(PreviewImage.Source is null||!phoneReady||sidebarOpen||SecondaryActions.IsExpanded||Header.IsMouseOver||Controls.IsMouseOver||Stopwatch.GetTimestamp()<toolsUntil);
+        FrozenLabel.Visibility=show&&frozen is not null?Visibility.Visible:Visibility.Collapsed;
         if(show==toolsShown)return;
         toolsShown=show;
         foreach(var element in new FrameworkElement[]{Header,Controls})
@@ -262,8 +267,8 @@ public partial class MainWindow : Window
         var pixels=frame.ToBitmap(true);
         var dialog=new Microsoft.Win32.SaveFileDialog{Filter="PNG 图片|*.png",FileName="DeskCam-"+DateTime.Now.ToString("yyyyMMdd-HHmmss")+".png"};
         if(dialog.ShowDialog(this)!=true)return;
-        try{var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(pixels));using var output=File.Create(dialog.FileName);encoder.Save(output);StatusText.Text=$"已保存 {pixels.PixelWidth}×{pixels.PixelHeight}：{dialog.FileName}";statusTick=Stopwatch.GetTimestamp()+Stopwatch.Frequency*5;}
-        catch(Exception ex){StatusText.Text="保存失败："+ex.Message;statusTick=Stopwatch.GetTimestamp()+Stopwatch.Frequency*5;}
+        try{var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(pixels));using var output=File.Create(dialog.FileName);encoder.Save(output);StatusText.Text=$"已保存 {pixels.PixelWidth}×{pixels.PixelHeight}：{dialog.FileName}";Notify($"已保存 {pixels.PixelWidth}×{pixels.PixelHeight}");statusTick=Stopwatch.GetTimestamp()+Stopwatch.Frequency*5;}
+        catch(Exception ex){StatusText.Text="保存失败："+ex.Message;Notify(StatusText.Text);statusTick=Stopwatch.GetTimestamp()+Stopwatch.Frequency*5;}
     }
     private void Autofocus_Click(object sender,RoutedEventArgs e)=>SendCamera("refocus");
     private void FocusLock_Click(object sender,RoutedEventArgs e)=>ToggleFocusLock();
@@ -286,8 +291,8 @@ public partial class MainWindow : Window
         using var live = frozen is null ? pipeline?.Acquire() : null;
         var frame = frozen ?? live;
         if (frame is null) { StatusText.Text = "还没有可复制的画面"; return; }
-        try { System.Windows.Clipboard.SetImage(frame.ToBitmap(true)); StatusText.Text = "已复制当前画面，可直接粘贴"; statusTick = Stopwatch.GetTimestamp() + Stopwatch.Frequency; }
-        catch (ExternalException) { StatusText.Text = "剪贴板正忙，请再按一次 Ctrl+C"; }
+        try { System.Windows.Clipboard.SetImage(frame.ToBitmap(true)); StatusText.Text = "已复制当前画面，可直接粘贴";Notify("已复制，可直接粘贴"); statusTick = Stopwatch.GetTimestamp() + Stopwatch.Frequency; }
+        catch (ExternalException) { StatusText.Text = "剪贴板正忙，请再按一次 Ctrl+C";Notify(StatusText.Text); }
     }
     private void Top_Click(object sender, RoutedEventArgs e) { Topmost = !Topmost; TopButton.Content = Topmost ? "取消置顶" : "置顶"; Save(); }
     private void Clean_Click(object sender, RoutedEventArgs e) => Clean();

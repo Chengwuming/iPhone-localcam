@@ -6,7 +6,7 @@
  PreviewKeyDown="Window_KeyDown" PreviewMouseMove="Window_PreviewMouseMove">
  <Window.Resources>
   <Style TargetType="Button">
-   <Setter Property="Background" Value="#282E37"/><Setter Property="Foreground" Value="#E9EEF5"/>
+   <Setter Property="FocusVisualStyle" Value="{x:Null}"/><Setter Property="Background" Value="#282E37"/><Setter Property="Foreground" Value="#E9EEF5"/>
    <Setter Property="BorderBrush" Value="#3B444F"/><Setter Property="BorderThickness" Value="0"/>
    <Setter Property="Padding" Value="13,9"/><Setter Property="Margin" Value="3"/><Setter Property="Cursor" Value="Hand"/>
    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
@@ -25,17 +25,17 @@
    <Setter Property="Foreground" Value="#E9EEF5"/><Setter Property="Padding" Value="12,10"/>
    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBoxItem"><Border x:Name="Option" Padding="{TemplateBinding Padding}" Background="Transparent" CornerRadius="5"><ContentPresenter/></Border><ControlTemplate.Triggers><Trigger Property="IsHighlighted" Value="True"><Setter TargetName="Option" Property="Background" Value="#34434B"/></Trigger><Trigger Property="IsSelected" Value="True"><Setter TargetName="Option" Property="Background" Value="#29423D"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.35"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
   </Style>
-  <Style TargetType="ComboBox">
+  <Style TargetType="ComboBox"><Setter Property="FocusVisualStyle" Value="{x:Null}"/>
    <Setter Property="Foreground" Value="#E9EEF5"/><Setter Property="MinHeight" Value="38"/><Setter Property="Background" Value="#252C35"/>
    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBox"><Grid>
-    <ToggleButton Focusable="False" IsChecked="{Binding IsDropDownOpen,RelativeSource={RelativeSource TemplatedParent},Mode=TwoWay}">
-     <ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border Background="#252C35" BorderBrush="#3A444F" BorderThickness="1" CornerRadius="8"><Grid><ContentPresenter Margin="12,9,32,9" Content="{Binding SelectionBoxItem,RelativeSource={RelativeSource AncestorType=ComboBox}}"/><TextBlock Text="⌄" Foreground="#9AABB9" HorizontalAlignment="Right" Margin="0,0,12,0" VerticalAlignment="Center"/></Grid></Border></ControlTemplate></ToggleButton.Template>
+    <ToggleButton Foreground="#E9EEF5" Focusable="False" IsChecked="{Binding IsDropDownOpen,RelativeSource={RelativeSource TemplatedParent},Mode=TwoWay}">
+     <ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border Background="#252C35" BorderBrush="#3A444F" BorderThickness="1" CornerRadius="8"><Grid><ContentPresenter TextElement.Foreground="#E9EEF5" Margin="12,9,32,9" Content="{Binding SelectionBoxItem,RelativeSource={RelativeSource AncestorType=ComboBox}}"/><TextBlock Text="⌄" Foreground="#9AABB9" HorizontalAlignment="Right" Margin="0,0,12,0" VerticalAlignment="Center"/></Grid></Border></ControlTemplate></ToggleButton.Template>
     </ToggleButton>
     <Popup x:Name="PART_Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" AllowsTransparency="True" Focusable="False" PopupAnimation="Fade"><Border Background="#1D252D" BorderBrush="#40505D" BorderThickness="1" CornerRadius="9" Padding="5" MinWidth="{Binding ActualWidth,RelativeSource={RelativeSource TemplatedParent}}"><ScrollViewer MaxHeight="320"><ItemsPresenter/></ScrollViewer></Border></Popup>
    </Grid><ControlTemplate.Triggers><Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
   </Style>
   <Style x:Key="TrackButton" TargetType="RepeatButton"><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="RepeatButton"><Border Height="4" CornerRadius="2" Background="{TemplateBinding Background}"/></ControlTemplate></Setter.Value></Setter></Style>
-  <Style TargetType="Slider"><Setter Property="MinHeight" Value="32"/><Setter Property="IsMoveToPointEnabled" Value="True"/>
+  <Style TargetType="Slider"><Setter Property="FocusVisualStyle" Value="{x:Null}"/><Setter Property="MinHeight" Value="32"/><Setter Property="IsMoveToPointEnabled" Value="True"/>
    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Slider"><Grid Margin="8,0"><Track x:Name="PART_Track">
     <Track.DecreaseRepeatButton><RepeatButton Style="{StaticResource TrackButton}" Background="#91D9C0" Command="Slider.DecreaseLarge"/></Track.DecreaseRepeatButton>
     <Track.Thumb><Thumb Width="18" Height="18"><Thumb.Template><ControlTemplate TargetType="Thumb"><Border CornerRadius="9" Background="#D4F5E9" BorderBrush="#151C20" BorderThickness="2"/></ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
@@ -59,6 +59,7 @@
    <Border x:Name="FrozenLabel" Visibility="Collapsed" Background="#E6253338" CornerRadius="8" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="20,76,0,0" Padding="12,7" IsHitTestVisible="False"><TextBlock Text="已冻结 · Space 恢复"/></Border>
    <Border x:Name="InspectBox" Visibility="Collapsed" Background="#F0192028" BorderBrush="#5A8276" BorderThickness="1" CornerRadius="10" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="20,20,20,92" Padding="12" IsHitTestVisible="False"><StackPanel><TextBlock Text="100% 细字检查" Foreground="#9CE2CB" Margin="0,0,0,8"/><Image x:Name="InspectImage" Stretch="None" HorizontalAlignment="Left"/></StackPanel></Border>
   </Grid>
+  <Border x:Name="Notice" Visibility="Collapsed" Background="#F024343A" CornerRadius="9" Padding="14,9" Margin="22,0,22,112" HorizontalAlignment="Left" VerticalAlignment="Bottom" IsHitTestVisible="False"><TextBlock x:Name="NoticeText" TextWrapping="Wrap" MaxWidth="440" Foreground="#D6F6E9"/></Border>
   <Grid x:Name="Header" VerticalAlignment="Top" Margin="20,16">
    <Border HorizontalAlignment="Left" Background="#EC192129" CornerRadius="12" Padding="15,10"><StackPanel Orientation="Horizontal"><TextBlock Text="DeskCam" FontWeight="SemiBold" FontSize="17"/><TextBlock x:Name="ConnectionBadge" Text="待连接" Foreground="#91D9C0" Margin="14,0,0,0" VerticalAlignment="Center" FontSize="12"/></StackPanel></Border>
    <Border HorizontalAlignment="Right" Background="#EC192129" CornerRadius="12" Padding="3"><StackPanel Orientation="Horizontal"><Button Content="连接" ToolTip="连接手机" Click="Pair_Click" Background="Transparent"/><Button Content="设置" Click="Settings_Click" Background="Transparent"/></StackPanel></Border>
