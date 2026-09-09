@@ -1,4 +1,5 @@
 export const qualities = {
+    smooth: { label: '流畅 1080p · 30 fps', width: 1920, height: 1080, fps: 30, bitrate: 16000000 },
     ultra: { label: '连续高清截图 4K · 10 fps', width: 3840, height: 2160, fps: 10, bitrate: 20000000 },
     economy: { label: '省流 720p · 20 fps', width: 1280, height: 720, fps: 20, bitrate: 4000000 },
     balanced: { label: '标准 1080p · 20 fps', width: 1920, height: 1080, fps: 20, bitrate: 8000000 },
@@ -59,4 +60,16 @@ export async function highResolutionPhoto(video) {
     const blob = await deadline(new Promise(resolve => canvas.toBlob(resolve,'image/jpeg',.97)), 8000, '高清图片生成超时');
     if (!blob) throw new Error('高清图片生成失败');
     return blob;
+}
+
+export function focusLockChanges(track) {
+    const caps=track.getCapabilities?.() || {}, actual=track.getSettings();
+    if (caps.focusMode?.includes('none')) return {focusMode:'none'};
+    if (caps.focusMode?.includes('manual') && Number.isFinite(actual.focusDistance))
+        return {focusMode:'manual',focusDistance:actual.focusDistance};
+    throw new Error('Safari 未开放锁焦；可以使用冻结预览固定截图画面');
+}
+export function canLockFocus(track) {
+    if (!track) return false;
+    try { focusLockChanges(track); return true; } catch { return false; }
 }

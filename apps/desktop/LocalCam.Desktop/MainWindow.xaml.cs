@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
@@ -84,8 +85,17 @@ public partial class MainWindow : Window
     }
     private void Tick()
     {
+        FocusLockButton.IsEnabled = AutofocusButton.IsEnabled = false;
         if (camera?.Snapshot is { } cameraState)
         {
+            bool ready = DateTimeOffset.UtcNow-cameraState.UpdatedAt<TimeSpan.FromSeconds(3) && !cameraState.Pending &&
+                cameraState.State is {} cs && cs.TryGetProperty("ready",out var rd) && rd.ValueKind==System.Text.Json.JsonValueKind.True &&
+                (!cs.TryGetProperty("busy",out var busy)||busy.ValueKind!=System.Text.Json.JsonValueKind.True);
+            bool locked = cameraState.State is {} ls && ls.TryGetProperty("focusLocked",out var lk) && lk.ValueKind==System.Text.Json.JsonValueKind.True;
+            bool canLock = cameraState.State is {} fs && fs.TryGetProperty("canLock",out var cl) && cl.ValueKind==System.Text.Json.JsonValueKind.True;
+            AutofocusButton.IsEnabled=ready; FocusLockButton.IsEnabled=ready&&(locked||canLock);
+            FocusLockButton.Content=locked?"焦点已锁定 L":"锁定焦点 L";
+            FocusLockButton.ToolTip=canLock||locked?"L 切换锁焦 / 自动；不会冻结预览":"手机未开放锁焦；Space 可冻结预览，但不是锁定相机焦点";
             CaptureText.Text = cameraState.Pending ? cameraState.Result : cameraState.State is { } state &&
                 state.TryGetProperty("photoStatus", out var message) ? message.GetString() : "";
             if (!cameraState.Pending && (cameraState.Result.StartsWith("操作失败") || cameraState.Result.StartsWith("手机未完成")))
@@ -97,6 +107,7 @@ public partial class MainWindow : Window
             try { ShowPhoto(photo); }
             catch (Exception ex) { StatusText.Text = "照片打开失败：" + ex.Message; }
         }
+        CaptureText.Visibility = camera?.Snapshot.Pending==true || photos?.Latest is not null || CaptureText.Text.Contains("失败") ? Visibility.Visible : Visibility.Collapsed;
         using var live = pipeline?.Acquire();
         var frame = frozen ?? live;
         if (frame is not null)
@@ -176,7 +187,7 @@ public partial class MainWindow : Window
         UpdateSidebar();
     }
     private void UpdateSidebar()=>CameraSidebar.Visibility=!clean&&settings.Current.CameraSidebar&&ActualWidth>=850?Visibility.Visible:Visibility.Collapsed;
-    private void Inspect_Click(object sender,RoutedEventArgs e){inspecting=!inspecting;InspectBox.Visibility=inspecting&&!clean?Visibility.Visible:Visibility.Collapsed;InspectButton.Content=inspecting?"关闭细字检查":"细字检查";}
+    private void Inspect_Click(object sender,RoutedEventArgs e){inspecting=!inspecting;InspectBox.Visibility=inspecting&&!clean?Visibility.Visible:Visibility.Collapsed;InspectButton.Content=inspecting?"关闭细字检查 I":"细字检查 I";}
     private void ShowPhoto(CapturedPhoto photo){photoWindow?.Close();photoWindow=new PhotoWindow(photo){Owner=this};photoWindow.Closed+=(_,_)=>photoWindow=null;Show();photoWindow.Show();}
     private void RecentPhoto_Click(object sender,RoutedEventArgs e){if(photos?.Latest is {} photo)ShowPhoto(photo);else{StatusText.Text="还没有成功抓拍的图片";statusTick=Stopwatch.GetTimestamp()+Stopwatch.Frequency*3;}}
     private void Resume() { frozen?.Dispose(); frozen = null; FrozenLabel.Visibility = Visibility.Collapsed; FreezeButton.Content = "冻结 Space"; }
@@ -197,6 +208,34 @@ public partial class MainWindow : Window
         frozen = pipeline?.Acquire();
         if (frozen is not null) { FrozenLabel.Visibility = clean ? Visibility.Collapsed : Visibility.Visible; FreezeButton.Content = "恢复 Space"; }
     }
+    private void SaveFrame_Click(object sender,RoutedEventArgs e) => SaveFrame();
+    private void SaveFrame()
+    {
+        using var live=frozen is null?pipeline?.Acquire():null;
+        var frame=frozen??live;
+        if(frame is null){StatusText.Text="还没有可保存的画面";return;}
+        // Capture before opening the dialog, so the saved image is the frame the user chose.
+        var pixels=frame.ToBitmap(true);
+        var dialog=new Microsoft.Win32.SaveFileDialog{Filter="PNG 图片|*.png",FileName="DeskCam-"+DateTime.Now.ToString("yyyyMMdd-HHmmss")+".png"};
+        if(dialog.ShowDialog(this)!=true)return;
+        try{var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(pixels));using var output=File.Create(dialog.FileName);encoder.Save(output);StatusText.Text=$"已保存 {pixels.PixelWidth}×{pixels.PixelHeight}：{dialog.FileName}";statusTick=Stopwatch.GetTimestamp()+Stopwatch.Frequency*5;}
+        catch(Exception ex){StatusText.Text="保存失败："+ex.Message;statusTick=Stopwatch.GetTimestamp()+Stopwatch.Frequency*5;}
+    }
+    private void Autofocus_Click(object sender,RoutedEventArgs e)=>SendCamera("refocus");
+    private void FocusLock_Click(object sender,RoutedEventArgs e)=>ToggleFocusLock();
+    private void ToggleFocusLock()
+    {
+        if(!FocusLockButton.IsEnabled)return;
+        var locked=camera?.Snapshot.State is {} state&&state.TryGetProperty("focusLocked",out var value)&&value.ValueKind==System.Text.Json.JsonValueKind.True;
+        SendCamera(locked?"refocus":"lock");
+    }
+    private void SendCamera(string kind){try{camera?.Request(kind);}catch(InvalidOperationException ex){StatusText.Text=ex.Message;statusTick=Stopwatch.GetTimestamp()+Stopwatch.Frequency*3;}}
+    private void Help_Click(object sender,RoutedEventArgs e)=>ShowHelp();
+    private void ShowHelp()=>System.Windows.MessageBox.Show(this,
+        "放好手机 → 调倍率与方向 → A 自动对焦 → 看清细字后 L 锁焦 → 截图。\n\n"+
+        "Ctrl+C：复制当前原像素画面\nCtrl+S：保存当前裁剪画面\nSpace：冻结 / 恢复预览（冻结后点击画面不会解除）\nL：锁焦 / 恢复自动；A：重新自动对焦\nI：100% 细字检查；H：高清抓拍\nR：旋转；C：框选裁剪；0：重置裁剪\n滚轮缩放，拖动平移；P：显示 / 收起相机栏\nCtrl+1 / Ctrl+2：整张 A4 / 局部推导预设\nF11：纯净模式；Esc / 双击：退出纯净\n\n"+
+        "1080p15 适合纸面；1080p30 适合动态书写；4K10 适合高清截图。\nWin+Shift+S 仅保存屏幕像素，完整 4K 用复制或保存。\n锁焦按钮灰色表示 Safari 未开放能力，不等于已锁焦。\n全局复制 Ctrl+Alt+C 若被占用，请用窗口内 Ctrl+C。",
+        "DeskCam · 使用与快捷键",MessageBoxButton.OK,MessageBoxImage.Information);
     private void Copy_Click(object sender, RoutedEventArgs e) => Copy();
     private void Copy()
     {
@@ -220,12 +259,20 @@ public partial class MainWindow : Window
     private void Window_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         if (e.Key == Key.C && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) Copy();
+        else if (e.Key == Key.S && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) SaveFrame();
+        else if (e.Key == Key.F1) ShowHelp();
+        else if (e.Key == Key.D1 && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) cameraPanel?.RestorePreset("整张 A4");
+        else if (e.Key == Key.D2 && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) cameraPanel?.RestorePreset("局部推导");
         else if (e.Key == Key.F11 || (e.Key == Key.Escape && clean)) Clean();
-        else if (CameraSidebar.IsKeyboardFocusWithin) return;
         else if (e.Key == Key.C) ToggleCrop();
         else if (e.Key == Key.R) Rotate();
         else if (e.Key is Key.D0 or Key.NumPad0) Reset();
         else if (e.Key == Key.Space) Freeze();
+        else if (e.Key == Key.L) ToggleFocusLock();
+        else if (e.Key == Key.A && AutofocusButton.IsEnabled) SendCamera("refocus");
+        else if (e.Key == Key.I) Inspect_Click(this,new RoutedEventArgs());
+        else if (e.Key == Key.H) CaptureHD_Click(this,new RoutedEventArgs());
+        else if (e.Key == Key.P) CameraControls_Click(this,new RoutedEventArgs());
         else return;
         e.Handled = true;
     }
@@ -256,7 +303,7 @@ public partial class MainWindow : Window
         if (PreviewImage.Source is null || pipeline is null) return;
         Viewport.Focus();
         if (clean && e.ClickCount == 2) { Clean(); return; }
-        Resume(); dragging = true; dragStart = e.GetPosition(Viewport); dragTransform = pipeline.Transform;
+        dragging = true; dragStart = e.GetPosition(Viewport); dragTransform = pipeline.Transform;
         Viewport.CaptureMouse();
         if (cropping) { Selection.Visibility = Visibility.Visible; Selection.Width = Selection.Height = 0; }
     }
@@ -265,6 +312,8 @@ public partial class MainWindow : Window
         if(inspecting){var p=OutputPoint(e.GetPosition(Viewport));inspectPoint=new Point(Math.Clamp(p.X/Math.Max(1,displayWidth),0,1),Math.Clamp(p.Y/Math.Max(1,displayHeight),0,1));}
         if (!dragging || dragTransform is null || pipeline is null) return;
         var now = e.GetPosition(Viewport);
+        if((now-dragStart).Length<3)return;
+        Resume();
         if (cropping)
         {
             System.Windows.Controls.Canvas.SetLeft(Selection, Math.Min(now.X, dragStart.X));

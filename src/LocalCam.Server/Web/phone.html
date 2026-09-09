@@ -28,7 +28,7 @@ select,input[type=range]{width:100%;font:inherit;margin:8px 0 12px}select{paddin
 <button id="stand-shade" hidden style="position:fixed;inset:0;z-index:10;border-radius:0;background:#000;color:#59635d;font-size:14px;font-weight:400">正在拍摄 · 点按返回<br><br>请保持前台，不要锁屏<br>可手动降低屏幕亮度</button>
 <p class="note">连接后请在电脑点“相机控制”调整清晰度、倍率和焦点。</p>
 <details><summary>手机备用相机控制</summary><section class="panel" aria-label="画质和相机控制">
-<label for="quality">实时清晰度</label><select id="quality"><option value="ultra">连续高清截图 4K · 10 fps</option><option value="paper">纸面清晰 1080p · 15 fps</option><option value="balanced">标准 1080p · 20 fps</option><option value="economy">省流 720p · 20 fps</option></select>
+<label for="quality">实时清晰度</label><select id="quality"><option value="ultra">连续高清截图 4K · 10 fps</option><option value="paper">纸面清晰 1080p · 15 fps</option><option value="smooth">流畅 1080p · 30 fps</option><option value="balanced">标准 1080p · 20 fps</option><option value="economy">省流 720p · 20 fps</option></select>
 <p class="note">纸面模式提高编码质量；失焦不会因提高码率而变清楚。设置会保存。</p>
 <label for="focus-mode">对焦方式</label><select id="focus-mode" disabled><option>等待相机能力</option></select>
 <div id="focus-range" hidden><label for="focus-distance">手动焦点位置 <output id="focus-value"></output></label><input id="focus-distance" type="range"></div>

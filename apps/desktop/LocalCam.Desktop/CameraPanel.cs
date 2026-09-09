@@ -36,7 +36,7 @@ internal sealed class CameraPanel : UserControl, IDisposable
         panel.Children.Add(new TextBlock { Text = "相机控制", FontSize = 20, Margin = new Thickness(0,0,0,12) });
         actual.TextWrapping = TextWrapping.Wrap; panel.Children.Add(actual);
         AddOption(quality,"纸面清晰 · 1080p15","paper"); AddOption(quality,"连续高清截图 · 4K10","ultra");
-        AddOption(quality,"标准 · 1080p20","balanced"); AddOption(quality,"省流 · 720p20","economy");
+        AddOption(quality,"流畅 · 1080p30","smooth"); AddOption(quality,"标准 · 1080p20","balanced"); AddOption(quality,"省流 · 720p20","economy");
         Row(panel,"实时清晰度",quality);
         quality.SelectionChanged += (_,_) => { if (!updating) Send("quality",text:Selected(quality)); };
         Row(panel,"相机倍率（拖动即时生效）",zoom); panel.Children.Add(zoomValue);
@@ -92,7 +92,7 @@ internal sealed class CameraPanel : UserControl, IDisposable
         presets[name]=new(readView(),Text(state,"quality")??"paper",Text(state,"focus")??"auto",Number(settings,"zoom"),Number(settings,"focusDistance"));
         try {preferences.Save(preferences.Current with{PaperPresets=presets});Notice("已保存 "+name);}catch(Exception ex){Notice("保存失败："+ex.Message);}
     }
-    private void RestorePreset(string name) {
+    internal void RestorePreset(string name) {
         if(preferences.Current.PaperPresets is not {} presets||!presets.TryGetValue(name,out var preset)||preset is null){Notice("先调整画面，再保存到 "+name);return;}
         try {
             queuedZoom=queuedDistance=null;
@@ -122,7 +122,7 @@ internal sealed class CameraPanel : UserControl, IDisposable
             quality.IsEnabled=focus.IsEnabled=refocus.IsEnabled=available&&!snapshot.Pending&&queuedZoom is null&&queuedDistance is null;
             foreach(var button in presetButtons)button.IsEnabled=quality.IsEnabled;
             foreach(ComboBoxItem option in focus.Items){var mode=(string)option.Tag;option.IsEnabled=mode=="auto"||mode=="manual"&&dr||mode=="none"&&Flag(state,"canLock");}
-            actual.Text=$"实际 {Number(settings,"width")}×{Number(settings,"height")} · {Number(settings,"zoom")?.ToString("F2")??"—"}×\n焦点 {Number(settings,"focusDistance")?.ToString("F3")??"系统管理"} · {Text(settings,"focusMode")??"系统模式"}";
+            actual.Text=$"实际 {Number(settings,"width")}×{Number(settings,"height")} · {Number(settings,"frameRate")?.ToString("F0")??"—"} fps · {Number(settings,"zoom")?.ToString("F2")??"—"}×\n焦点 {Number(settings,"focusDistance")?.ToString("F3")??"系统管理"} · {Text(settings,"focusMode")??"系统模式"}";
             status.Text=fresh?(DateTimeOffset.UtcNow<noticeUntil?notice:snapshot.Result):"手机离线；请保持 DeskCam 在前台";
 
         }finally{updating=false;}

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { adjustable, applyVerified, preparePhoto, deadline, highResolutionPhoto } from '../src/LocalCam.Server/Web/camera-controls.mjs';
+import { adjustable, applyVerified, preparePhoto, deadline, highResolutionPhoto, focusLockChanges, canLockFocus, qualities } from '../src/LocalCam.Server/Web/camera-controls.mjs';
 
 test('ignored zoom and missing focus readback are not reported as working', async () => {
     const track = { applyConstraints: async () => {}, getSettings: () => ({ zoom: 1 }), getCapabilities: () => ({}) };
@@ -38,4 +38,28 @@ test('HD frame rejects 1080p and keeps native 4K dimensions', async () => {
     await assert.rejects(highResolutionPhoto(video), /未达到/);
     video.videoWidth = 3840; video.videoHeight = 2160;
     assert.equal(await highResolutionPhoto(video), 'jpeg');
+});
+
+
+test('focus locking uses an exposed mode and the current actual distance', async () => {
+    let actual={focusMode:'continuous',focusDistance:45};
+    const track={getCapabilities:()=>({focusMode:['continuous','manual']}),getSettings:()=>actual,
+        applyConstraints:async c=>{actual={...actual,...c.advanced[0]};}};
+    assert.deepEqual(focusLockChanges(track),{focusMode:'manual',focusDistance:45});
+    assert.equal(canLockFocus(track),true);
+    await applyVerified(track,focusLockChanges(track));
+    assert.equal(actual.focusMode,'manual');assert.equal(actual.focusDistance,45);
+    track.getCapabilities=()=>({focusMode:['continuous']});
+    assert.equal(canLockFocus(track),false);
+    assert.throws(()=>focusLockChanges(track),/未开放锁焦/);
+    track.getCapabilities=()=>({focusMode:['none']});
+    assert.deepEqual(focusLockChanges(track),{focusMode:'none'});
+});
+
+test('manual lock requires a reported focus distance and checks ignored mode changes', async () => {
+    const track={getCapabilities:()=>({focusMode:['manual']}),getSettings:()=>({}),applyConstraints:async()=>{}};
+    assert.equal(canLockFocus(track),false);
+    track.getSettings=()=>({focusMode:'continuous',focusDistance:50});
+    await assert.rejects(applyVerified(track,focusLockChanges(track)),/未采用/);
+    assert.equal(qualities.smooth.fps,30);assert.equal(qualities.smooth.width,1920);
 });

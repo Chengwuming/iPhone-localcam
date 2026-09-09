@@ -1,5 +1,5 @@
 import { cameraFrame } from './camera-frame.mjs';
-import { qualities, adjustable, applyVerified, preparePhoto, deadline, highResolutionPhoto } from './camera-controls.mjs';
+import { qualities, adjustable, applyVerified, preparePhoto, deadline, highResolutionPhoto, focusLockChanges, canLockFocus } from './camera-controls.mjs';
 const quality = document.querySelector('#quality');
 const focusMode = document.querySelector('#focus-mode'), focusDistance = document.querySelector('#focus-distance');
 const zoom = document.querySelector('#camera-zoom'), hdButton = document.querySelector('#capture-hd');
@@ -396,8 +396,8 @@ init();
 function cameraState() {
     const track = stream?.getVideoTracks()[0], s = track?.getSettings() || {}, c = track?.getCapabilities?.() || {};
     return { quality: preferences.quality, focus: preferences.focus, busy: photoBusy || starting || commandBusy,
-        acquiring: photoBusy || starting, ready: running, zoomRange: c.zoom || null, focusRange: c.focusDistance || null, canLock: c.focusMode?.includes('none') || false,
-        settings: { width:s.width,height:s.height,zoom:s.zoom,focusDistance:s.focusDistance,focusMode:s.focusMode },
+        acquiring: photoBusy || starting, ready: running, zoomRange: c.zoom || null, focusRange: c.focusDistance || null, canLock: canLockFocus(track), focusLocked: preferences.focus !== 'auto' && ['none','manual'].includes(s.focusMode),
+        settings: { width:s.width,height:s.height,frameRate:s.frameRate,zoom:s.zoom,focusDistance:s.focusDistance,focusMode:s.focusMode },
         photoStatus: photoStatus.textContent };
 }
 async function executeCommand(command) {
@@ -425,7 +425,9 @@ async function executeCommand(command) {
             if (current && current !== 'continuous' && current !== 'single-shot') throw new Error('手机实际对焦模式仍为 ' + current + '，未确认自动模式生效');
         } else {
             const changes = {};
-            if (command.kind === 'zoom') {
+            if (command.kind === 'lock' || command.kind === 'focus' && command.text === 'none') {
+                Object.assign(changes,focusLockChanges(track));
+            } else if (command.kind === 'zoom') {
                 if (!adjustable(caps.zoom) || command.value < caps.zoom.min || command.value > caps.zoom.max) throw new Error('倍率不在手机支持范围');
                 changes.zoom = command.value;
             } else if (command.kind === 'distance' || command.kind === 'focus' && command.text === 'manual') {
