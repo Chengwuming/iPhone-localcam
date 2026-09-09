@@ -14,7 +14,7 @@ public sealed class CameraControlStore
     private string result = "等待手机同步相机设置";
     private void Expire()
     {
-        if (outstanding != 0 && DateTimeOffset.UtcNow - sentAt > TimeSpan.FromSeconds(35))
+        if (outstanding != 0 && DateTimeOffset.UtcNow - sentAt > TimeSpan.FromSeconds(75))
         { pending = null; outstanding = 0; result = "手机未完成操作；请检查手机页面后重试"; }
     }
     public CameraSnapshot Snapshot { get { lock (gate) { Expire(); return new(state, updated, result, outstanding != 0); } } }

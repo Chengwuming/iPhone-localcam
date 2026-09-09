@@ -118,7 +118,7 @@ public static class LocalCamServerHost
         app.MapGet("/api/status", (HttpContext c) => !IsLocal(c) ? Results.NotFound() : Results.Json(new
         {
             phoneConnected = relay.IsPhoneConnected, relay.FramesReceived, relay.BytesReceived, relay.LastFrameAt,
-            error = relay.Error, preferredAddress = Preferred(), video = instance.VideoStatus?.Invoke()
+            error = relay.Error, preferredAddress = Preferred(), video = instance.VideoStatus?.Invoke(), camera = instance.Camera.Snapshot
         }));
         app.MapGet("/api/frame.jpg", (HttpContext c) =>
         {

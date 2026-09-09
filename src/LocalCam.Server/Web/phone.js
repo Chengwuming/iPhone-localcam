@@ -273,7 +273,7 @@ zoom.onchange = async () => {
 };
 async function uploadPhoto(blob, source) {
     photoStatus.textContent = '正在处理并传送原始照片…';
-    const photo = await preparePhoto(blob);
+    const photo = await deadline(preparePhoto(blob), 12000, '图片处理超时');
     const response = await fetch('/api/photo?source=' + source, { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: photo.jpeg, signal: AbortSignal.timeout(15000) });
     if (!response.ok) throw new Error('照片上传失败：' + response.status);
     photoStatus.textContent = '已传到电脑：' + photo.width + '×' + photo.height +

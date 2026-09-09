@@ -77,6 +77,7 @@ internal sealed class CameraWindow : Window
         status.Text = fresh ? snapshot.Result : "手机未同步；请刷新手机 DeskCam 并保持前台";
         if (snapshot.State is not { } state) return;
         if (state.TryGetProperty("busy",out var busy) && busy.ValueKind == JsonValueKind.True) enabled = false;
+        if (!state.TryGetProperty("ready",out var ready) || ready.ValueKind != JsonValueKind.True) enabled = false;
         var settings = state.GetProperty("settings");
         actual.Text = $"实际画面 {Number(settings,"width")}×{Number(settings,"height")} · 倍率 {Number(settings,"zoom")?.ToString("F2") ?? "未返回"}×\n实际对焦模式 {Text(settings,"focusMode") ?? "系统管理"} · 焦点 {Number(settings,"focusDistance")?.ToString("F3") ?? "未返回"}";
         if (!initialized && fresh && Number(settings,"width") is not null)
