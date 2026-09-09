@@ -7,6 +7,7 @@ public sealed class DeviceStore(string directory)
 {
     private readonly object gate = new();
     private readonly string path = Path.Combine(directory, "deskcam-device.json");
+    public bool HasPairing { get { lock(gate) return File.Exists(path); } }
     public string Pair()
     {
         var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();

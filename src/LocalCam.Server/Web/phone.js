@@ -128,14 +128,14 @@ async function begin() {
         width = camera.videoWidth; height = camera.videoHeight;
         if (width * height !== preset.width * preset.height || Math.max(width, height) !== preset.width)
             throw new Error('相机实际输出 ' + width + '×' + height + '，未达到所选分辨率；可降低清晰度后重试');
-        const config = { codec: 'avc1.420028', width, height, bitrate: preset.bitrate, framerate: preset.fps,
+        const config = { codec: preset.width > 1920 ? 'avc1.420033' : 'avc1.420028', width, height, bitrate: preset.bitrate, framerate: preset.fps,
             latencyMode: 'realtime', hardwareAcceleration: 'prefer-hardware', avc: { format: 'annexb' } };
         let supported = await VideoEncoder.isConfigSupported(config);
         if (!supported.supported) {
             config.hardwareAcceleration = 'no-preference';
             supported = await VideoEncoder.isConfigSupported(config);
         }
-        if (!supported.supported) throw new Error('此 Safari 不支持 1080p 实时 H.264 编码');
+        if (!supported.supported) throw new Error('此 Safari 不支持所选分辨率的实时 H.264 编码');
         if (gen !== generation || !wanted) return;
         setStatus('正在连接电脑…');
         socket = new WebSocket('wss://' + location.host + '/ws/phone');
@@ -238,9 +238,31 @@ async function restoreCameraSettings(track) {
         if ('focusMode' in changes || 'focusDistance' in changes) document.querySelector('#focus-status').textContent += ' ' + restoreError;
     }
 }
-quality.onchange = () => {
-    preferences.quality = quality.value; savePreferences();
-    if (wanted && !photoBusy) { teardown(); begin(); }
+async function changePreset(next) {
+    if (!Object.hasOwn(qualities, next.quality) || !['auto','manual','none'].includes(next.focus)) throw new Error('未知相机预设');
+    const previous = {...preferences};
+    preferences = {...preferences, ...next}; quality.value = preferences.quality;
+    teardown(); wanted = true; recovering = false; await begin();
+    if (running) {
+        // Validate actual encoder output, not only the advertised configuration.
+        const until = performance.now() + 6000;
+        while (running && sequence === 0 && performance.now() < until) await new Promise(r => setTimeout(r, 50));
+    }
+    if (!running || sequence === 0) {
+        const reason = status.textContent;
+        teardown(); preferences = previous; quality.value = previous.quality;
+        wanted = true; recovering = false; await begin();
+        throw new Error('切换未成功，已尝试恢复原档位：' + reason);
+    }
+    savePreferences();
+}
+quality.onchange = async () => {
+    if (photoBusy || starting || commandBusy) { quality.value = preferences.quality; return; }
+    if (!wanted) { preferences.quality=quality.value; savePreferences(); return; }
+    commandBusy=true;
+    try { await changePreset({...preferences,quality:quality.value}); }
+    catch(error) { setStatus(errorText(error)); }
+    finally { commandBusy=false; }
 };
 focusMode.onchange = async () => {
     const track = stream?.getVideoTracks()[0]; if (!track || photoBusy || starting || commandBusy) return;
@@ -265,12 +287,15 @@ document.querySelector('#refocus').onclick = () => {
     preferences.focus = 'auto'; preferences.distance = null; savePreferences();
     if (wanted && !photoBusy) { teardown(); begin(); }
 };
-zoom.oninput = () => { document.querySelector('#zoom-value').textContent = Number(zoom.value).toFixed(1) + '×'; };
-zoom.onchange = async () => {
-    const track = stream?.getVideoTracks()[0]; if (!track || photoBusy || starting || commandBusy) return;
-    try { await applyVerified(track, { zoom: Number(zoom.value) }); preferences.zoom = Number(zoom.value); savePreferences(); showCameraSettings(track); }
-    catch (error) { document.querySelector('#zoom-status').textContent = errorText(error); }
-};
+let phoneZoom;
+zoom.oninput = () => { document.querySelector('#zoom-value').textContent=Number(zoom.value).toFixed(1)+'×'; phoneZoom=Number(zoom.value); };
+setInterval(async () => {
+    if (phoneZoom === undefined || photoBusy || starting || commandBusy || !running) return;
+    const value=phoneZoom; phoneZoom=undefined; commandBusy=true;
+    try { await deadline(applyVerified(stream.getVideoTracks()[0],{zoom:value}),5000,'倍率设置超时'); preferences.zoom=value; savePreferences(); }
+    catch(error) { document.querySelector('#zoom-status').textContent=errorText(error); }
+    finally { commandBusy=false; }
+},100);
 async function uploadPhoto(blob, source) {
     photoStatus.textContent = '正在处理并传送原始照片…';
     const photo = await deadline(preparePhoto(blob), 12000, '图片处理超时');
@@ -282,6 +307,12 @@ async function uploadPhoto(blob, source) {
 async function captureHD() {
     const track = stream?.getVideoTracks()[0]; if (!track || photoBusy || starting) throw new Error('请等待实时视频恢复后再抓拍');
     photoBusy = true; hdButton.disabled = quality.disabled = focusMode.disabled = focusDistance.disabled = zoom.disabled = true;
+    if (camera.videoWidth * camera.videoHeight > 1920 * 1080) {
+        try { await uploadPhoto(await highResolutionPhoto(camera), 'hd-frame'); }
+        catch(error) { photoStatus.textContent='抓拍失败：'+errorText(error); throw error; }
+        finally { photoBusy=false; hdButton.disabled=quality.disabled=focusDistance.disabled=false; showCameraSettings(track); lastOutput=performance.now(); forceKey=true; }
+        return;
+    }
     photoStatus.textContent = '正在切换高分辨率采集，实时视频会暂时暂停…';
     const deviceId = track.getSettings().deviceId;
     teardown();
@@ -365,7 +396,7 @@ init();
 function cameraState() {
     const track = stream?.getVideoTracks()[0], s = track?.getSettings() || {}, c = track?.getCapabilities?.() || {};
     return { quality: preferences.quality, focus: preferences.focus, busy: photoBusy || starting || commandBusy,
-        ready: running, zoomRange: c.zoom || null, focusRange: c.focusDistance || null, canLock: c.focusMode?.includes('none') || false,
+        acquiring: photoBusy || starting, ready: running, zoomRange: c.zoom || null, focusRange: c.focusDistance || null, canLock: c.focusMode?.includes('none') || false,
         settings: { width:s.width,height:s.height,zoom:s.zoom,focusDistance:s.focusDistance,focusMode:s.focusMode },
         photoStatus: photoStatus.textContent };
 }
@@ -375,11 +406,18 @@ async function executeCommand(command) {
         if (photoBusy || starting || !running) throw new Error('手机忙碌或视频未开始，请稍后重试');
         const track = stream.getVideoTracks()[0], caps = track.getCapabilities?.() || {};
         if (command.kind === 'photo') await captureHD();
-        else if (command.kind === 'quality') {
-            if (!Object.hasOwn(qualities, command.text)) throw new Error('未知清晰度');
-            preferences.quality = command.text; quality.value = command.text; savePreferences();
-            teardown(); await begin();
-            if (!running) throw new Error(status.textContent);
+        else if (command.kind === 'quality' || command.kind === 'preset') {
+            const next = command.kind === 'quality' ? {...preferences,quality:command.text} : JSON.parse(command.text);
+            for (const key of ['zoom','distance']) if (next[key] != null && !Number.isFinite(next[key])) throw new Error('预设参数无效');
+            await changePreset(next);
+            if (command.kind === 'preset') {
+                const current=stream.getVideoTracks()[0], c=current.getCapabilities?.()||{}, changes={};
+                if (next.zoom != null) changes.zoom=next.zoom;
+                if (next.focus === 'manual' && next.distance != null) changes.focusDistance=next.distance;
+                if (next.focus === 'manual' && c.focusMode?.includes('manual')) changes.focusMode='manual';
+                if (next.focus === 'none') changes.focusMode='none';
+                if (Object.keys(changes).length) await deadline(applyVerified(current,changes),5000,'预设设置超时');
+            }
         } else if (command.kind === 'refocus' || command.kind === 'focus' && command.text === 'auto') {
             preferences.focus = 'auto'; preferences.distance = null; savePreferences(); teardown(); await begin();
             if (!running) throw new Error(status.textContent);
@@ -422,4 +460,8 @@ async function syncCamera() {
         }
     } catch {} finally { syncBusy = false; }
 }
-setInterval(syncCamera, 700);
+setInterval(syncCamera, 100);
+
+const shade=document.querySelector('#stand-shade');
+document.querySelector('#stand-mode').onclick=()=>{shade.hidden=false;};
+shade.onclick=()=>{shade.hidden=true;};

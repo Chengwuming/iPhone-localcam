@@ -54,7 +54,9 @@ public sealed class LocalCertificateAuthority
         var authorityPath = Path.Combine(directory, AuthorityFile);
         if (File.Exists(authorityPath))
         {
-            return X509CertificateLoader.LoadPkcs12FromFile(authorityPath, password: null, X509KeyStorageFlags.Exportable);
+            var existing = X509CertificateLoader.LoadPkcs12FromFile(authorityPath, password: null, X509KeyStorageFlags.Exportable);
+            File.WriteAllBytes(PublicCertificatePath, existing.Export(X509ContentType.Cert));
+            return existing;
         }
 
         using var key = RSA.Create(4096);

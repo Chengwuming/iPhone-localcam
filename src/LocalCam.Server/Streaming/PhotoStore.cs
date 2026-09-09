@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 namespace LocalCam.Server.Streaming;
 
-public sealed record CapturedPhoto(long Sequence, byte[] Jpeg, int Width, int Height, string Source, DateTimeOffset TakenAt);
+public sealed record CapturedPhoto(long Sequence, byte[] Jpeg, int Width, int Height, string Source, DateTimeOffset TakenAt) { public string? LastSavedPath { get; set; } }
 public sealed class PhotoStore
 {
     public const int MaximumBytes = 24 * 1024 * 1024;

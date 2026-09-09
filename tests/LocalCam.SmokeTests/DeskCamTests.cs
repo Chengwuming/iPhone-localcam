@@ -19,6 +19,11 @@ internal static class DeskCamTests
         var parsed = VideoProtocol.Parse(packet, 9);
         Assert(parsed.Width == 1920 && parsed.Height == 1080 && parsed.KeyFrame &&
             parsed.TimestampUs == 123456 && parsed.ConnectionId == 9 && parsed.Sequence == 7, "Packet metadata lost");
+        foreach(var size in new[]{(3840,2160),(2160,3840)}) {
+            var hd=(byte[])packet.Clone();BinaryPrimitives.WriteUInt16LittleEndian(hd.AsSpan(4),(ushort)size.Item1);BinaryPrimitives.WriteUInt16LittleEndian(hd.AsSpan(6),(ushort)size.Item2);
+            Assert(VideoProtocol.Parse(hd,9).Width==size.Item1,"4K dimensions rejected");
+        }
+        var huge=(byte[])packet.Clone();BinaryPrimitives.WriteUInt16LittleEndian(huge.AsSpan(4),3840);BinaryPrimitives.WriteUInt16LittleEndian(huge.AsSpan(6),3840);Reject(huge,"Excessive area accepted");
         Reject(packet[..31], "Truncated header accepted");
         var invalid = (byte[])packet.Clone(); invalid[28] = 7; Reject(invalid, "Truncated payload accepted");
         invalid = (byte[])packet.Clone(); invalid[4] = 1; invalid[5] = 0; Reject(invalid, "Invalid dimensions accepted");

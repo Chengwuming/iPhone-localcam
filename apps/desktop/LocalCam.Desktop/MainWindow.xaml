@@ -16,7 +16,8 @@
    </StackPanel>
    <TextBlock Text="DeskCam" FontSize="22" FontWeight="SemiBold"/>
   </DockPanel>
-  <Grid x:Name="Viewport" Grid.Row="1" Background="#080B09" ClipToBounds="True"
+  <Grid Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+  <Grid x:Name="Viewport" Background="#080B09" ClipToBounds="True"
     MouseWheel="Viewport_MouseWheel" MouseLeftButtonDown="Viewport_MouseDown"
     MouseMove="Viewport_MouseMove" MouseLeftButtonUp="Viewport_MouseUp">
    <Image x:Name="PreviewImage" Stretch="Uniform"/>
@@ -28,6 +29,11 @@
    <Border x:Name="FrozenLabel" Visibility="Collapsed" Background="#D029392F" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12" Padding="10,6">
     <TextBlock Text="已冻结预览 · webcam 继续实时"/>
    </Border>
+   <Border x:Name="InspectBox" Visibility="Collapsed" Background="#111614" BorderBrush="#B9EDCF" BorderThickness="1" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="12" Padding="8" IsHitTestVisible="False">
+    <StackPanel><TextBlock Text="100% 细字检查 · 鼠标所指位置" Margin="0,0,0,6"/><Image x:Name="InspectImage" Stretch="None" HorizontalAlignment="Left"/></StackPanel>
+   </Border>
+  </Grid>
+  <ContentControl x:Name="CameraSidebar" Grid.Column="1" Width="320" Visibility="Collapsed"/>
   </Grid>
   <StackPanel x:Name="Controls" Grid.Row="2" Margin="14,12">
    <WrapPanel>
@@ -36,6 +42,8 @@
     <Button Content="复制 Ctrl+C" Click="Copy_Click"/><Button x:Name="TopButton" Content="置顶" Click="Top_Click"/>
     <Button Content="相机控制" Click="CameraControls_Click"/>
     <Button Content="Capture HD" Click="CaptureHD_Click"/>
+    <Button Content="最近一张" Click="RecentPhoto_Click"/>
+    <Button x:Name="InspectButton" Content="细字检查" Click="Inspect_Click"/>
     <Button Content="纯净 F11" Click="Clean_Click"/>
    </WrapPanel>
    <TextBlock x:Name="StatusText" Foreground="#9CAD9F" FontSize="12" TextWrapping="Wrap" Margin="0,10,0,0" Text="等待手机"/>

@@ -2,11 +2,14 @@
 from pathlib import Path
 from fractions import Fraction
 import struct
+import sys
 import av
 import numpy as np
 
 root = Path(__file__).parent
-width, height = 1920, 1080
+ultra = "--4k" in sys.argv
+width, height = (3840, 2160) if ultra else (1920, 1080)
+filename = "deskcam-test-4k.dcv" if ultra else "deskcam-test.dcv"
 codec = av.CodecContext.create("libx264", "w")
 codec.width, codec.height = width, height
 codec.pix_fmt = "yuv420p"
@@ -16,7 +19,7 @@ codec.bit_rate = 8_000_000
 codec.options = {"preset": "veryfast", "tune": "zerolatency", "profile": "baseline",
                  "x264-params": "keyint=20:min-keyint=20:scenecut=0:repeat-headers=1:colorprim=bt709:transfer=bt709:colormatrix=bt709"}
 sequence = 0
-with (root / "deskcam-test.dcv").open("wb") as target:
+with (root / filename).open("wb") as target:
     for index in range(40):
         rgb = np.zeros((height, width, 3), np.uint8)
         rgb[:height//2, :width//2] = 40
@@ -33,4 +36,4 @@ with (root / "deskcam-test.dcv").open("wb") as target:
             target.write(data)
             sequence += 1
     assert not codec.encode(None), "zerolatency encoder unexpectedly buffered frames"
-print(f"Generated {sequence} frames in {root / 'deskcam-test.dcv'}")
+print(f"Generated {sequence} frames in {root / filename}")

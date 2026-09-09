@@ -18,7 +18,11 @@ public partial class MainWindow : Window
     private readonly VideoPipeline? pipeline;
     private readonly PhotoStore? photos;
     private readonly CameraControlStore? camera;
-    private CameraWindow? cameraWindow;
+    private CameraPanel? cameraPanel;
+    private PhotoWindow? photoWindow;
+    private bool inspecting;
+    private Point inspectPoint = new(.5,.5);
+    private long lastInspect;
     private long shownPhoto;
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(50) };
     private WriteableBitmap? bitmap;
@@ -38,6 +42,8 @@ public partial class MainWindow : Window
     {
         this.settings = settings; this.pipeline = pipeline; this.photos = photos; this.camera = camera;
         InitializeComponent();
+        if(camera is not null){cameraPanel=new CameraPanel(camera,settings,()=>pipeline?.Transform??new ViewTransform(),v=>{Resume();if(pipeline is not null)pipeline.Transform=v;Save();});CameraSidebar.Content=cameraPanel;}
+        SizeChanged+=(_,_)=>UpdateSidebar();UpdateSidebar();
         CameraText.Text = cameraStatus ?? "虚拟摄像头未启动";
         if (startupError is not null) EmptyText.Text = startupError;
         Topmost = settings.Current.AlwaysOnTop;
@@ -53,7 +59,7 @@ public partial class MainWindow : Window
         Closing += (_, e) => { Save(); ((App)System.Windows.Application.Current).HandleMainWindowClosing(e); };
         Closed += (_, _) =>
         {
-            timer.Stop(); frozen?.Dispose();
+            timer.Stop(); frozen?.Dispose(); cameraPanel?.Dispose();
             if (hwndSource is not null) { UnregisterHotKey(hwndSource.Handle, CopyHotkey); hwndSource.RemoveHook(WindowProc); }
         };
         SourceInitialized += (_, _) =>
@@ -88,7 +94,7 @@ public partial class MainWindow : Window
         if (photos?.Latest is { } photo && photo.Sequence != shownPhoto)
         {
             shownPhoto = photo.Sequence;
-            try { Show(); new PhotoWindow(photo) { Owner = this }.Show(); }
+            try { ShowPhoto(photo); }
             catch (Exception ex) { StatusText.Text = "照片打开失败：" + ex.Message; }
         }
         using var live = pipeline?.Acquire();
@@ -111,8 +117,17 @@ public partial class MainWindow : Window
                     PreviewImage.Source = bitmap; Empty.Visibility = Visibility.Collapsed;
                     shownSequence = frame.Sequence;
                     contentRect = new Rect(frame.Content[0], frame.Content[1], frame.Content[2], frame.Content[3]);
+
                 }
             }
+                    if(IsVisible&&bitmap is not null&&inspecting&&!clean&&Stopwatch.GetElapsedTime(lastInspect).TotalMilliseconds>=150){
+                        lastInspect=Stopwatch.GetTimestamp();
+                        int w=Math.Min(256,frame.Width),h=Math.Min(150,frame.Height);
+                        var box=new Int32Rect(Math.Clamp((int)(inspectPoint.X*frame.Width)-w/2,0,frame.Width-w),Math.Clamp((int)(inspectPoint.Y*frame.Height)-h/2,0,frame.Height-h),w,h);
+                        InspectImage.Source=new CroppedBitmap(bitmap,box);
+                        var dpi=VisualTreeHelper.GetDpi(this);InspectImage.Width=w/dpi.DpiScaleX;InspectImage.Height=h/dpi.DpiScaleY;
+                        InspectImage.Stretch=Stretch.Fill;
+                    }
         }
         else
         {
@@ -154,12 +169,16 @@ public partial class MainWindow : Window
     private void Settings_Click(object sender, RoutedEventArgs e) => new SettingsWindow(settings) { Owner = this }.ShowDialog();
     private void CameraControls_Click(object sender, RoutedEventArgs e)
     {
-        if (camera is null) return;
-        if (cameraWindow is not null) { cameraWindow.Activate(); return; }
-        cameraWindow = new CameraWindow(camera) { Owner = this };
-        cameraWindow.Closed += (_,_) => cameraWindow = null;
-        cameraWindow.Show();
+        if(camera is null)return;
+        bool show=CameraSidebar.Visibility!=Visibility.Visible;
+        settings.Save(settings.Current with{CameraSidebar=show});
+        if(show&&ActualWidth<850)Width=Math.Min(1000,SystemParameters.WorkArea.Width);
+        UpdateSidebar();
     }
+    private void UpdateSidebar()=>CameraSidebar.Visibility=!clean&&settings.Current.CameraSidebar&&ActualWidth>=850?Visibility.Visible:Visibility.Collapsed;
+    private void Inspect_Click(object sender,RoutedEventArgs e){inspecting=!inspecting;InspectBox.Visibility=inspecting&&!clean?Visibility.Visible:Visibility.Collapsed;InspectButton.Content=inspecting?"关闭细字检查":"细字检查";}
+    private void ShowPhoto(CapturedPhoto photo){photoWindow?.Close();photoWindow=new PhotoWindow(photo){Owner=this};photoWindow.Closed+=(_,_)=>photoWindow=null;Show();photoWindow.Show();}
+    private void RecentPhoto_Click(object sender,RoutedEventArgs e){if(photos?.Latest is {} photo)ShowPhoto(photo);else{StatusText.Text="还没有成功抓拍的图片";statusTick=Stopwatch.GetTimestamp()+Stopwatch.Frequency*3;}}
     private void Resume() { frozen?.Dispose(); frozen = null; FrozenLabel.Visibility = Visibility.Collapsed; FreezeButton.Content = "冻结 Space"; }
     private void Rotate()
     {
@@ -196,9 +215,11 @@ public partial class MainWindow : Window
         FrozenLabel.Visibility = !clean && frozen is not null ? Visibility.Visible : Visibility.Collapsed;
         WindowStyle = clean ? WindowStyle.None : WindowStyle.SingleBorderWindow;
         ResizeMode = clean ? ResizeMode.CanResizeWithGrip : ResizeMode.CanResize;
+        UpdateSidebar();InspectBox.Visibility=inspecting&&!clean?Visibility.Visible:Visibility.Collapsed;
     }
     private void Window_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
+        if(CameraSidebar.IsKeyboardFocusWithin)return;
         if (e.Key == Key.C && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) Copy();
         else if (e.Key == Key.C) ToggleCrop();
         else if (e.Key == Key.R) Rotate();
@@ -240,6 +261,7 @@ public partial class MainWindow : Window
     }
     private void Viewport_MouseMove(object sender, System.Windows.Input.MouseEventArgs e)
     {
+        if(inspecting){var p=OutputPoint(e.GetPosition(Viewport));inspectPoint=new Point(Math.Clamp(p.X/Math.Max(1,displayWidth),0,1),Math.Clamp(p.Y/Math.Max(1,displayHeight),0,1));}
         if (!dragging || dragTransform is null || pipeline is null) return;
         var now = e.GetPosition(Viewport);
         if (cropping)

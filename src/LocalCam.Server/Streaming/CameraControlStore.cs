@@ -20,7 +20,7 @@ public sealed class CameraControlStore
     public CameraSnapshot Snapshot { get { lock (gate) { Expire(); return new(state, updated, result, outstanding != 0); } } }
     public CameraCommand Request(string kind, double? value = null, string? text = null)
     {
-        if (kind is not ("quality" or "zoom" or "focus" or "distance" or "refocus" or "photo")) throw new ArgumentException("未知相机操作");
+        if (kind is not ("quality" or "zoom" or "focus" or "distance" or "refocus" or "photo" or "preset")) throw new ArgumentException("未知相机操作");
         if (value is { } v && !double.IsFinite(v)) throw new ArgumentException("无效参数");
         lock (gate)
         {

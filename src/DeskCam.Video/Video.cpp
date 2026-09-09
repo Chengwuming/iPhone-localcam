@@ -189,7 +189,7 @@ struct Decoder {
     }
 };
 API int dc_create(int w,int h,void** handle,int* hardware) {
-    if(!handle||!hardware||w<16||h<16||w>1920||h>1920||w*h>1920*1080||(w&1)||(h&1))return E_INVALIDARG;
+    if(!handle||!hardware||w<16||h<16||w>3840||h>3840||w*h>3840*2160||(w&1)||(h&1))return E_INVALIDARG;
     *handle=nullptr;*hardware=0;
     auto decoder=new(std::nothrow) Decoder();if(!decoder)return E_OUTOFMEMORY;
     HRESULT hr=decoder->initialize(w,h);
@@ -206,8 +206,8 @@ static uint8_t clampByte(int v){return static_cast<uint8_t>(std::clamp(v,0,255))
 // Transform NV12 planes directly; rotate coordinates before cropping. Output remains limited-range NV12.
 API int dc_render(const uint8_t* input,int sw,int sh,int rotation,double cx,double cy,double cw,double ch,
     uint8_t* output,int ow,int oh,uint8_t* bgra,int* rect) {
-    if(!input||!output||!rect||sw<16||sh<16||sw>1920||sh>1920||(sw&1)||(sh&1)||
-        ow<16||oh<16||ow>1920||oh>1920||(ow&1)||(oh&1)||rotation<0||rotation>3||
+    if(!input||!output||!rect||sw<16||sh<16||sw>3840||sh>3840||sw*sh>3840*2160||(sw&1)||(sh&1)||
+        ow<16||oh<16||ow>3840||oh>3840||ow*oh>3840*2160||(ow&1)||(oh&1)||rotation<0||rotation>3||
         !std::isfinite(cx)||!std::isfinite(cy)||!std::isfinite(cw)||!std::isfinite(ch)||
         cx<0||cy<0||cw<0.01||ch<0.01||cx+cw>1.000001||cy+ch>1.000001)return E_INVALIDARG;
     const int rw=(rotation&1)?sh:sw,rh=(rotation&1)?sw:sh;

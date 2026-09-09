@@ -73,14 +73,17 @@ public static class LocalCamServerHost
             preferred = route.Address.ToString();
             Directory.CreateDirectory(dataDirectory);
             File.WriteAllText(addressFile, preferred);
-            var session = pairing.Create();
-            var phoneUrl = $"https://{route.Address}:{HttpsPort}/phone#session={session.Id}&token={session.Token}";
+            var daily = c.Request.Query["daily"] == "true" && devices.HasPairing;
+            var session = daily ? null : pairing.Create();
+            var dailyUrl = $"https://{route.Address}:{HttpsPort}/phone";
+            var phoneUrl = session is null ? dailyUrl : dailyUrl + $"#session={session.Id}&token={session.Token}";
             var bootstrapUrl = $"http://{route.Address}:{BootstrapPort}/";
             return Results.Json(new
             {
                 phoneUrl, phoneQr = QrCodeRenderer.RenderDataUrl(phoneUrl),
                 bootstrapUrl, bootstrapQr = QrCodeRenderer.RenderDataUrl(bootstrapUrl),
-                connectionName = route.Name, connectionType = LocalNetworkAddressProvider.GetConnectionType(route), session.ExpiresAt
+                connectionName = route.Name, connectionType = LocalNetworkAddressProvider.GetConnectionType(route), expiresAt = session?.ExpiresAt, dailyUrl, daily,
+                certificateId = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(ca.PublicCertificatePath)))
             });
         });
         app.MapGet("/phone", (HttpContext c) => c.Request.IsHttps ? Asset("phone.html", "text/html; charset=utf-8") : Results.NotFound());

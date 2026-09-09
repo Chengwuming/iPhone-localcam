@@ -14,6 +14,7 @@ using Panel = System.Windows.Controls.Panel;
 namespace LocalCam.Desktop;
 internal sealed class PhotoWindow : Window
 {
+    private readonly CapturedPhoto photo;
     private readonly BitmapSource original;
     private BitmapSource current;
     private readonly Image picture = new() { Stretch = Stretch.Uniform };
@@ -23,7 +24,8 @@ internal sealed class PhotoWindow : Window
     private int rotation;
     public PhotoWindow(CapturedPhoto photo)
     {
-        Title = "Capture HD · 完整照片"; Width = 1050; Height = 820; MinWidth = 520; MinHeight = 400;
+        this.photo=photo;
+        Title = "Capture HD · " + photo.TakenAt.LocalDateTime.ToString("HH:mm:ss"); Width = 1050; Height = 820; MinWidth = 520; MinHeight = 400;
         Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(17, 22, 20));
         using var bytes = new MemoryStream(photo.Jpeg);
         original = BitmapFrame.Create(bytes, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
@@ -40,6 +42,11 @@ internal sealed class PhotoWindow : Window
         });
         AddButton(toolbar, "复制 Ctrl+C", CopyPhoto);
         AddButton(toolbar, "保存照片", SavePhoto);
+        AddButton(toolbar, "打开保存位置", () => {
+            if(photo.LastSavedPath is not {} path){info.Text="尚未保存，请先点保存照片";return;}
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Path.GetDirectoryName(path)!){UseShellExecute=true}); }
+            catch(Exception ex){info.Text="打开失败："+ex.Message;}
+        });
         DockPanel.SetDock(info, Dock.Bottom); root.Children.Add(info);
         scroll.Content = picture; root.Children.Add(scroll);
         scroll.SizeChanged += (_, _) => ResizePicture();
@@ -55,7 +62,7 @@ internal sealed class PhotoWindow : Window
         var dpi = VisualTreeHelper.GetDpi(this);
         picture.Width = actualPixels ? current.PixelWidth / dpi.DpiScaleX : Math.Max(16, scroll.ActualWidth - 20);
         picture.Height = actualPixels ? current.PixelHeight / dpi.DpiScaleY : Math.Max(16, scroll.ActualHeight - 20);
-        info.Text = $"完整照片 {current.PixelWidth}×{current.PixelHeight} · {(actualPixels ? "100% 原像素" : "适合窗口")} · 未套用实时裁剪";
+        info.Text = $"完整照片 {current.PixelWidth}×{current.PixelHeight} · {(actualPixels ? "100% 原像素" : "适合窗口")} · 未套用实时裁剪\n{(photo.LastSavedPath is {} path ? "上次保存："+path : "尚未保存到磁盘；本次运行可从“最近一张”重开")}";
     }
     private void CopyPhoto()
     {
@@ -71,6 +78,7 @@ internal sealed class PhotoWindow : Window
             BitmapEncoder encoder = dialog.FilterIndex == 2 ? new JpegBitmapEncoder { QualityLevel = 98 } : new PngBitmapEncoder();
             encoder.Frames.Add(BitmapFrame.Create(current));
             using var output = File.Create(dialog.FileName); encoder.Save(output);
+            photo.LastSavedPath=dialog.FileName;
             info.Text = "已保存：" + dialog.FileName;
         }
         catch (Exception ex) { info.Text = "保存失败：" + ex.Message; }

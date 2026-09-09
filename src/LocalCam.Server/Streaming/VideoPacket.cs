@@ -13,8 +13,8 @@ public static class VideoProtocol
         int width = BinaryPrimitives.ReadUInt16LittleEndian(bytes[4..]);
         int height = BinaryPrimitives.ReadUInt16LittleEndian(bytes[6..]);
         uint length = BinaryPrimitives.ReadUInt32LittleEndian(bytes[28..]);
-        if (width < 16 || height < 16 || width > 1920 || height > 1920 ||
-            width * height > 1920 * 1080 || (width & 1) != 0 || (height & 1) != 0 ||
+        if (width < 16 || height < 16 || width > 3840 || height > 3840 ||
+            width * height > 3840 * 2160 || (width & 1) != 0 || (height & 1) != 0 ||
             length == 0 || length > MaximumMessageSize - HeaderSize || length != bytes.Length - HeaderSize)
             throw new InvalidDataException("Invalid video dimensions or payload size.");
         long timestamp = BinaryPrimitives.ReadInt64LittleEndian(bytes[16..]);

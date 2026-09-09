@@ -45,7 +45,8 @@ int main(int argc,char** argv){
  try{
     check(argc==2,"Usage: DeskCamVideoTest fixture.dcv");
     std::ifstream file(argv[1],std::ios::binary);check(!!file,"Cannot open fixture");
-    const int w=1920,h=1080;
+    uint16_t fw=0,fh=0;file.seekg(4);file.read(reinterpret_cast<char*>(&fw),2);file.read(reinterpret_cast<char*>(&fh),2);file.seekg(0);
+    const int w=fw,h=fh;check(w>=16&&h>=16&&w<=3840&&h<=3840&&w*h<=3840*2160,"Invalid fixture dimensions");
     std::vector<uint8_t> raw(w*h*3/2),out(w*h*3/2),bgra(w*h*4);
     void* decoder=nullptr;int hardware=0;
     int hr=dc_create(w,h,&decoder,&hardware);
@@ -82,6 +83,9 @@ int main(int argc,char** argv){
     check(dc_render(raw.data(),w,h,0,-.1,0,1,1,out.data(),w,h,bgra.data(),rect)<0,"Invalid crop was accepted");
     // A fresh session must decode the first keyframe again after a disconnect.
     check(dc_create(w,h,&decoder,&hardware)>=0,"Recreate failed");dc_destroy(decoder);
+    std::vector<uint8_t> webcam(1920*1080*3/2);
+    check(dc_render(raw.data(),w,h,0,0,0,1,1,webcam.data(),1920,1080,nullptr,rect)>=0,"1080p webcam conversion failed");
+    check(webcam[540*1920+480]>140&&webcam[540*1920+480]<170,"Webcam conversion pixel wrong");
     verifyPortraitGeometry();
     double seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-start).count();
     std::printf("PASS: %d/%d frames, decode+render %.1f fps, crop/rotation/recreate verified\n",frames,packets,frames/seconds);

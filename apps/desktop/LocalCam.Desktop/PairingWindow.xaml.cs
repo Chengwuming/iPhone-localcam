@@ -46,7 +46,7 @@ public partial class PairingWindow : Window
         await LoadPairingAsync();
     }
 
-    private async Task LoadPairingAsync()
+    private async Task LoadPairingAsync(bool newPairing = false)
     {
         try
         {
@@ -56,14 +56,16 @@ public partial class PairingWindow : Window
                 return;
             }
 
-            var json = await httpClient.GetStringAsync($"http://localhost:29100/api/session?address={Uri.EscapeDataString(selectedNetwork.Address)}");
+            var json = await httpClient.GetStringAsync($"http://localhost:29100/api/session?daily={(!newPairing).ToString().ToLowerInvariant()}&address={Uri.EscapeDataString(selectedNetwork.Address)}");
             var pairing = JsonSerializer.Deserialize<PairingResponse>(json, new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true
             }) ?? throw new InvalidOperationException("本地服务未返回配对信息。");
             PhoneQr.Source = FromDataUrl(pairing.PhoneQr);
             BootstrapQr.Source = FromDataUrl(pairing.BootstrapQr);
-            ExpiryText.Text = $"二维码有效至 {pairing.ExpiresAt.LocalDateTime:t}";
+            ExpiryText.Text = pairing.Daily ? "日常入口，无需重新配对（须使用已配对的浏览器）" : $"首次/重新配对二维码有效至 {pairing.ExpiresAt?.LocalDateTime:t}";
+            DailyAddress.Text = pairing.DailyUrl;
+            CertificateIdentity.Text = "当前电脑证书 SHA-256：" + pairing.CertificateId;
             SelectedNetworkText.Text = $"当前二维码：{pairing.ConnectionType} · {pairing.ConnectionName}（{selectedNetwork.Address}）。首次扫码后可添加到主屏幕，之后无需每天配对。";
             ErrorText.Text = string.Empty;
         }
@@ -72,6 +74,8 @@ public partial class PairingWindow : Window
             ErrorText.Text = $"无法生成连接二维码：{exception.Message}";
         }
     }
+
+    private async void NewPairing_Click(object sender,RoutedEventArgs e) => await LoadPairingAsync(true);
 
     private async void RefreshNetworks_Click(object sender, RoutedEventArgs e) =>
         await LoadNetworksAsync();
@@ -112,7 +116,7 @@ public partial class PairingWindow : Window
         string PhoneQr,
         string ConnectionName,
         string ConnectionType,
-        DateTimeOffset ExpiresAt);
+        DateTimeOffset? ExpiresAt, string DailyUrl, bool Daily, string CertificateId);
 
     private sealed record NetworkOption(
         string Address,

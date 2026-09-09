@@ -64,6 +64,8 @@
                         <Image x:Name="PhoneQr" Width="260" Height="260" SnapsToDevicePixels="True" />
                     </Border>
                     <TextBlock Text="请用 iPhone 相机扫描，打开 Safari 并允许使用摄像头；成功后添加到主屏幕。" HorizontalAlignment="Center" Foreground="#605E5C" TextAlignment="Center" TextWrapping="Wrap" />
+                    <TextBox x:Name="DailyAddress" IsReadOnly="True" BorderThickness="0" HorizontalContentAlignment="Center" Margin="0,10,0,0" />
+                    <Button Content="首次连接 / 重新配对" Click="NewPairing_Click" Style="{StaticResource SubtleButton}" HorizontalAlignment="Center" Margin="0,8,0,8" />
                     <TextBlock x:Name="ExpiryText" HorizontalAlignment="Center" Foreground="#605E5C" FontSize="12" Margin="0,6,0,0" />
                 </StackPanel>
             </Border>
@@ -75,7 +77,8 @@
                     </Expander.Header>
                     <Border Margin="0,10,0,0" Padding="18" Background="#FFFFFF" BorderBrush="#E1DFDD" BorderThickness="1" CornerRadius="10">
                         <StackPanel>
-                            <TextBlock Text="此步骤只需对这台 iPhone 和这台电脑完成一次，与 WLAN、Windows 移动热点或 USB 无关：扫描下方二维码，按 iPhone 提示安装描述文件；安装后还必须到“设置 → 通用 → 关于本机 → 证书信任设置”，为 LocalCam Local CA 开启完全信任。若 Safari 显示“此连接非私人连接”，说明完全信任尚未生效。完成后回到上方重新生成并扫描连接二维码。" Foreground="#605E5C" TextWrapping="Wrap" />
+                            <TextBlock Text="此步骤只需对这台 iPhone 和这台电脑完成一次，与 WLAN、Windows 移动热点或 USB 无关：扫描下方二维码，按 iPhone 提示安装描述文件；安装后还必须到“设置 → 通用 → 关于本机 → 证书信任设置”，为 LocalCam Local CA 开启完全信任。若仍有安全警告，可能没有完全信任，或安装的是旧项目同名证书；请核对当前证书。电脑无法远程确认 iPhone 的信任状态。完成后回到上方重新生成并扫描连接二维码。" Foreground="#605E5C" TextWrapping="Wrap" />
+                            <TextBlock x:Name="CertificateIdentity" TextWrapping="Wrap" FontSize="12" Margin="0,10,0,0" />
                             <Border Margin="0,14,0,0" Padding="8" HorizontalAlignment="Center" Background="White" BorderBrush="#E1DFDD" BorderThickness="1" CornerRadius="8">
                                 <Image x:Name="BootstrapQr" Width="260" Height="260" SnapsToDevicePixels="True" />
                             </Border>

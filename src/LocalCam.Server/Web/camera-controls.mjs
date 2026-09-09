@@ -1,4 +1,5 @@
 export const qualities = {
+    ultra: { label: '连续高清截图 4K · 10 fps', width: 3840, height: 2160, fps: 10, bitrate: 20000000 },
     economy: { label: '省流 720p · 20 fps', width: 1280, height: 720, fps: 20, bitrate: 4000000 },
     balanced: { label: '标准 1080p · 20 fps', width: 1920, height: 1080, fps: 20, bitrate: 8000000 },
     paper: { label: '纸面清晰 1080p · 15 fps', width: 1920, height: 1080, fps: 15, bitrate: 12000000 }

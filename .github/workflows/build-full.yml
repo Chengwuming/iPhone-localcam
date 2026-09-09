@@ -57,6 +57,9 @@ jobs:
           & artifacts/video-build/Release/DeskCamVideoTest.exe tests/deskcam-test.dcv
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+          & artifacts/video-build/Release/DeskCamVideoTest.exe tests/deskcam-test-4k.dcv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Managed smoke tests
         run: dotnet run --project tests/LocalCam.SmokeTests -c Release
 
@@ -73,7 +76,7 @@ jobs:
           Copy-Item artifacts/virtual-camera/live/* publish/VirtualCamera/
           Copy-Item artifacts/video-build/Release/DeskCamVideo.dll publish/
           Copy-Item artifacts/video-build/Release/DeskCamVideoTest.exe publish/
-          Copy-Item tests/deskcam-test.dcv publish/
+          Copy-Item tests/deskcam-test.dcv,tests/deskcam-test-4k.dcv publish/
           Copy-Item scripts/Install-DeskCam.ps1,scripts/Install-DeskCam.cmd,scripts/Start-DeskCam.cmd publish/
           Copy-Item DESKCAM_README.md publish/README.md
           Get-ChildItem publish -Directory | Select-Object -First 5 Name

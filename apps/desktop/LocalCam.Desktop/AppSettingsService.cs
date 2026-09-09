@@ -22,10 +22,14 @@ internal sealed record LocalCamSettings(
     bool StartWithWindows,
     WindowPlacementSettings? WindowPlacement = null,
     ViewTransform? View = null,
-    bool AlwaysOnTop = false)
+    bool AlwaysOnTop = false,
+    Dictionary<string, PaperPreset>? PaperPresets = null,
+    bool CameraSidebar = true)
 {
     public static LocalCamSettings Default { get; } = new(CloseBehavior.MinimizeToTray, false, null);
 }
+
+internal sealed record PaperPreset(ViewTransform View, string Quality, string Focus, double? Zoom, double? Distance);
 
 internal sealed class AppSettingsService
 {
@@ -66,7 +70,7 @@ internal sealed class AppSettingsService
     public void Save(LocalCamSettings settings)
     {
         SaveCore(settings);
-        ApplyStartupRegistration(settings.StartWithWindows);
+        if (Environment.GetEnvironmentVariable("DESKCAM_DATA_DIR") is null) ApplyStartupRegistration(settings.StartWithWindows);
     }
 
     public void SaveWindowPlacement(WindowPlacementSettings placement)
