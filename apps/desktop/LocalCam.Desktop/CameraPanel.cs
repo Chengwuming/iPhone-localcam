@@ -19,7 +19,7 @@ internal sealed class CameraPanel : UserControl, IDisposable
     private readonly ComboBox quality = new(), focus = new();
     private readonly Slider zoom = new(), distance = new();
     private readonly TextBlock actual = new(), status = new(), zoomValue = new(), distanceValue = new();
-    private readonly Button refocus = new();
+    private readonly Button refocus = new(), shade = new(), capture = new();
     private readonly List<Button> quickZoom = new(), presetButtons = new();
     private bool updating;
     private string? notice;
@@ -30,11 +30,15 @@ internal sealed class CameraPanel : UserControl, IDisposable
     public CameraPanel(CameraControlStore store, AppSettingsService preferences, Func<ViewTransform> readView, Action<ViewTransform> applyView)
     {
         this.store = store; this.preferences = preferences; this.readView = readView; this.applyView = applyView;
-        Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(29,43,34));
+        Background = System.Windows.Media.Brushes.Transparent;
         var panel = new StackPanel { Margin = new Thickness(16) };
         Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-        panel.Children.Add(new TextBlock { Text = "相机控制", FontSize = 20, Margin = new Thickness(0,0,0,12) });
-        actual.TextWrapping = TextWrapping.Wrap; panel.Children.Add(actual);
+        panel.Children.Add(new TextBlock { Text = "相机与手机", FontSize = 19, Margin = new Thickness(0,0,0,12) });
+        actual.TextWrapping = TextWrapping.Wrap;actual.Foreground=new SolidColorBrush(System.Windows.Media.Color.FromRgb(143,167,183));actual.FontSize=12;panel.Children.Add(actual);
+        var phoneRow=new WrapPanel{Margin=new Thickness(0,14,0,0)};
+        shade.Content="手机黑色遮罩";shade.Click+=(_,_)=>{var state=store.Snapshot.State;Send("shade",state is {} s&&Flag(s,"shaded")?0:1);};
+        capture.Content="停止拍摄";capture.Click+=(_,_)=>{var state=store.Snapshot.State;Send("capture",state is {} s&&Flag(s,"ready")?0:1);};
+        phoneRow.Children.Add(shade);phoneRow.Children.Add(capture);panel.Children.Add(phoneRow);
         AddOption(quality,"纸面清晰 · 1080p15","paper"); AddOption(quality,"连续高清截图 · 4K10","ultra");
         AddOption(quality,"流畅 · 1080p30","smooth"); AddOption(quality,"标准 · 1080p20","balanced"); AddOption(quality,"省流 · 720p20","economy");
         Row(panel,"实时清晰度",quality);
@@ -59,14 +63,14 @@ internal sealed class CameraPanel : UserControl, IDisposable
             row.Children.Add(restore);row.Children.Add(save);presetButtons.Add(restore);presetButtons.Add(save);
         }
         status.TextWrapping=TextWrapping.Wrap;status.Margin=new Thickness(0,14,0,0);panel.Children.Add(status);
-        panel.Children.Add(new TextBlock {Text="倍率与焦点会连续应用，只发送最新位置。4K 用于预览和截图，webcam 始终 1080p。预设保存相机参数、方向和裁剪。",TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,14,0,0),FontSize=12});
+        panel.Children.Add(new TextBlock {Foreground=new SolidColorBrush(System.Windows.Media.Color.FromRgb(135,155,172)),Text="调整即时生效。手机需保持 DeskCam 在前台。系统相机拍照与权限确认仍需在手机点按；其他日常操作在电脑完成。F1 查看相机权限设置。",TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,14,0,0),FontSize=12});
         timer.Tick+=(_,_)=>Tick();timer.Start();Tick();
     }
     private static Button MakeButton(string text,Action action) {var button=new Button{Content=text,Padding=new Thickness(9,6,9,6),Margin=new Thickness(0,0,5,4)};button.Click+=(_,_)=>action();return button;}
     private static void Row(StackPanel panel,string label,FrameworkElement control) {
         panel.Children.Add(new TextBlock{Text=label,Margin=new Thickness(0,14,0,7)});
         System.Windows.Automation.AutomationProperties.SetName(control,label);
-        if(control is ComboBox combo){combo.Foreground=System.Windows.Media.Brushes.Black;combo.MinHeight=30;}
+        if(control is ComboBox combo){combo.MinHeight=38;}
         panel.Children.Add(control);
     }
     private static void AddOption(ComboBox combo,string label,string value)=>combo.Items.Add(new ComboBoxItem{Content=label,Tag=value});
@@ -105,7 +109,11 @@ internal sealed class CameraPanel : UserControl, IDisposable
         bool sync=!snapshot.Pending;
         if(pendingPreset is {} saved&&!snapshot.Pending){if(snapshot.Result.StartsWith("设置已应用"))applyView(saved.View);pendingPreset=null;}
         if(!fresh){queuedZoom=queuedDistance=null;}
-        if(snapshot.State is not {} state){quality.IsEnabled=focus.IsEnabled=zoom.IsEnabled=distance.IsEnabled=refocus.IsEnabled=false;foreach(var button in quickZoom.Concat(presetButtons))button.IsEnabled=false;status.Text="打开手机 DeskCam 后即可调整";return;}
+        if(snapshot.State is not {} state){shade.IsEnabled=capture.IsEnabled=false;quality.IsEnabled=focus.IsEnabled=zoom.IsEnabled=distance.IsEnabled=refocus.IsEnabled=false;foreach(var button in quickZoom.Concat(presetButtons))button.IsEnabled=false;status.Text="打开手机 DeskCam 后即可调整";return;}
+        shade.IsEnabled=capture.IsEnabled=fresh&&Flag(state,"remoteUi")&&!snapshot.Pending&&!Flag(state,"busy");
+        shade.Content=Flag(state,"shaded")?"关闭手机遮罩":"手机黑色遮罩";
+        capture.Content=Flag(state,"ready")?"停止拍摄":"开始拍摄";
+        shade.ToolTip=Flag(state,"remoteUi")?"黑色遮罩不会锁屏；手机保持前台，可记住上次状态":"请刷新手机页面以启用远程遮罩与开始/停止";
         bool available=fresh&&Flag(state,"ready")&&!Flag(state,"acquiring");
         if(available&&!snapshot.Pending){
             if(queuedZoom is {} z){queuedZoom=null;Send("zoom",z);snapshot=store.Snapshot;sync=false;}

@@ -7,6 +7,8 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using System.Windows.Media.Animation;
+using System.Windows.Automation;
 using LocalCam.Server;
 using LocalCam.Server.Streaming;
 using System.Net.Http;
@@ -21,7 +23,9 @@ public partial class MainWindow : Window
     private readonly CameraControlStore? camera;
     private CameraPanel? cameraPanel;
     private PhotoWindow? photoWindow;
-    private bool inspecting;
+    private bool inspecting, sidebarOpen, phoneReady, toolsShown = true;
+    private long toolsUntil;
+    [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
     private Point inspectPoint = new(.5,.5);
     private long lastInspect;
     private long shownPhoto;
@@ -45,6 +49,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         if(camera is not null){cameraPanel=new CameraPanel(camera,settings,()=>pipeline?.Transform??new ViewTransform(),v=>{Resume();if(pipeline is not null)pipeline.Transform=v;Save();});CameraSidebar.Content=cameraPanel;}
         SizeChanged+=(_,_)=>UpdateSidebar();UpdateSidebar();
+        toolsUntil=Stopwatch.GetTimestamp()+Stopwatch.Frequency*3;
         CameraText.Text = cameraStatus ?? "虚拟摄像头未启动";
         if (startupError is not null) EmptyText.Text = startupError;
         Topmost = settings.Current.AlwaysOnTop;
@@ -67,6 +72,7 @@ public partial class MainWindow : Window
         {
             hwndSource = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
             hwndSource.AddHook(WindowProc);
+            int dark=1, caption=0x0014100D;DwmSetWindowAttribute(hwndSource.Handle,20,ref dark,4);DwmSetWindowAttribute(hwndSource.Handle,35,ref caption,4);
             if (!RegisterHotKey(hwndSource.Handle, CopyHotkey, 0x4000 | 0x2 | 0x1, 0x43))
                 CameraText.Text += " · Ctrl+Alt+C 已被占用，窗口内 Ctrl+C 仍可复制";
         };
@@ -85,6 +91,7 @@ public partial class MainWindow : Window
     }
     private void Tick()
     {
+        UpdateTools();
         if (camera?.Snapshot is { } cameraState)
         {
             bool ready = DateTimeOffset.UtcNow-cameraState.UpdatedAt<TimeSpan.FromSeconds(3) && !cameraState.Pending &&
@@ -93,7 +100,9 @@ public partial class MainWindow : Window
             bool locked = cameraState.State is {} ls && ls.TryGetProperty("focusLocked",out var lk) && lk.ValueKind==System.Text.Json.JsonValueKind.True;
             bool canLock = cameraState.State is {} fs && fs.TryGetProperty("canLock",out var cl) && cl.ValueKind==System.Text.Json.JsonValueKind.True;
             AutofocusButton.IsEnabled=ready; FocusLockButton.IsEnabled=ready&&(locked||canLock);
-            FocusLockButton.Content=locked?"焦点已锁定 L":"锁定焦点 L";
+            FocusLockButton.Content=locked?"已锁焦":"锁焦";
+            AutomationProperties.SetName(FocusLockButton,locked?"焦点已锁定 L":"锁定焦点 L");
+            phoneReady=ready;ConnectionBadge.Text=ready?"实时预览":DateTimeOffset.UtcNow-cameraState.UpdatedAt<TimeSpan.FromSeconds(3)?"拍摄已暂停":"等待手机";
             FocusLockButton.ToolTip=canLock||locked?"L 切换锁焦 / 自动；不会冻结预览":"手机未开放锁焦；Space 可冻结预览，但不是锁定相机焦点";
             CaptureText.Text = cameraState.Pending ? cameraState.Result : cameraState.State is { } state &&
                 state.TryGetProperty("photoStatus", out var message) ? message.GetString() : "";
@@ -107,7 +116,7 @@ public partial class MainWindow : Window
             catch (Exception ex) { StatusText.Text = "照片打开失败：" + ex.Message; }
         }
         if(camera is null)FocusLockButton.IsEnabled=AutofocusButton.IsEnabled=false;
-        CaptureText.Visibility = camera?.Snapshot.Pending==true || photos?.Latest is not null || CaptureText.Text?.Contains("失败")==true ? Visibility.Visible : Visibility.Collapsed;
+        CaptureText.Visibility = camera?.Snapshot.Pending==true || CaptureText.Text?.Contains("失败")==true ? Visibility.Visible : Visibility.Collapsed;
         using var live = pipeline?.Acquire();
         var frame = frozen ?? live;
         if (frame is not null)
@@ -181,16 +190,51 @@ public partial class MainWindow : Window
     private void CameraControls_Click(object sender, RoutedEventArgs e)
     {
         if(camera is null)return;
-        bool show=CameraSidebar.Visibility!=Visibility.Visible;
-        settings.Save(settings.Current with{CameraSidebar=show});
-        if(show&&ActualWidth<850)Width=Math.Min(1000,SystemParameters.WorkArea.Width);
-        UpdateSidebar();
+        sidebarOpen=!sidebarOpen;UpdateSidebar();ShowTools();
     }
-    private void UpdateSidebar(){CameraSidebar.Visibility=!clean&&settings.Current.CameraSidebar&&ActualWidth>=850?Visibility.Visible:Visibility.Collapsed;SecondaryActions.IsExpanded=ActualWidth>=700;}
-    private void Inspect_Click(object sender,RoutedEventArgs e){inspecting=!inspecting;InspectBox.Visibility=inspecting&&!clean?Visibility.Visible:Visibility.Collapsed;InspectButton.Content=inspecting?"关闭细字检查 I":"细字检查 I";}
+    private void UpdateSidebar()
+    {
+        if(SidebarShell is null)return;
+        SidebarShell.Visibility=sidebarOpen&&!clean?Visibility.Visible:Visibility.Collapsed;
+        SidebarShell.Width=Math.Min(320,Math.Max(260,ActualWidth-40));
+    }
+    private void Inspect_Click(object sender,RoutedEventArgs e)
+    {
+        inspecting=!inspecting;InspectBox.Visibility=inspecting&&!clean?Visibility.Visible:Visibility.Collapsed;
+        InspectButton.Content=inspecting?"关闭检查":"细字检查";
+        AutomationProperties.SetName(InspectButton,inspecting?"关闭细字检查 I":"细字检查 I");
+    }
+    private void ShowTools(){toolsUntil=Stopwatch.GetTimestamp()+Stopwatch.Frequency*3;UpdateTools();}
+    private void Window_PreviewMouseMove(object sender,System.Windows.Input.MouseEventArgs e)
+    {
+        var p=e.GetPosition(this);
+        if(p.Y<76||p.Y>ActualHeight-90)ShowTools();
+    }
+    private void UpdateTools()
+    {
+        bool show=!clean&&(PreviewImage.Source is null||!phoneReady||sidebarOpen||SecondaryActions.IsExpanded||Header.IsMouseOver||Controls.IsMouseOver||Stopwatch.GetTimestamp()<toolsUntil);
+        if(show==toolsShown)return;
+        toolsShown=show;
+        foreach(var element in new FrameworkElement[]{Header,Controls})
+        {
+            element.IsHitTestVisible=show;
+            element.BeginAnimation(OpacityProperty,new DoubleAnimation(show?1:0,TimeSpan.FromMilliseconds(170)));
+        }
+    }
+    private void Fill_Click(object sender,RoutedEventArgs e)=>FillViewport();
+    private void FillViewport()
+    {
+        using var frame=pipeline?.Acquire();
+        if(frame is null||pipeline is null||Viewport.ActualHeight<=0)return;
+        Resume();var t=frame.View;double ratio=Viewport.ActualWidth/Viewport.ActualHeight, current=(double)frame.Width/frame.Height;
+        double w=t.Width,h=t.Height;
+        if(current>ratio)w*=ratio/current;else h*=current/ratio;
+        pipeline.Transform=t with{X=t.X+(t.Width-w)/2,Y=t.Y+(t.Height-h)/2,Width=w,Height=h};
+        Save();ShowTools();
+    }
     private void ShowPhoto(CapturedPhoto photo){photoWindow?.Close();photoWindow=new PhotoWindow(photo){Owner=this};photoWindow.Closed+=(_,_)=>photoWindow=null;Show();photoWindow.Show();}
     private void RecentPhoto_Click(object sender,RoutedEventArgs e){if(photos?.Latest is {} photo)ShowPhoto(photo);else{StatusText.Text="还没有成功抓拍的图片";statusTick=Stopwatch.GetTimestamp()+Stopwatch.Frequency*3;}}
-    private void Resume() { frozen?.Dispose(); frozen = null; FrozenLabel.Visibility = Visibility.Collapsed; FreezeButton.Content = "冻结 Space"; }
+    private void Resume() { frozen?.Dispose(); frozen = null; FrozenLabel.Visibility = Visibility.Collapsed; FreezeButton.Content = "冻结"; AutomationProperties.SetName(FreezeButton,"冻结 Space"); }
     private void Rotate()
     {
         if (pipeline is null) return;
@@ -198,7 +242,7 @@ public partial class MainWindow : Window
     }
     private void Rotate_Click(object sender, RoutedEventArgs e) => Rotate();
     private void Crop_Click(object sender, RoutedEventArgs e) => ToggleCrop();
-    private void ToggleCrop() { cropping = !cropping; CropButton.Content = cropping ? "拖动框选区域" : "裁剪 C"; }
+    private void ToggleCrop() { cropping = !cropping; CropButton.Content = cropping ? "框选中" : "裁剪"; AutomationProperties.SetName(CropButton,cropping?"拖动框选区域":"裁剪 C"); }
     private void Reset_Click(object sender, RoutedEventArgs e) => Reset();
     private void Reset() { if (pipeline is null) return; Resume(); pipeline.Transform = new ViewTransform(pipeline.Transform.Rotation); Save(); }
     private void Freeze_Click(object sender, RoutedEventArgs e) => Freeze();
@@ -206,7 +250,7 @@ public partial class MainWindow : Window
     {
         if (frozen is not null) { Resume(); return; }
         frozen = pipeline?.Acquire();
-        if (frozen is not null) { FrozenLabel.Visibility = clean ? Visibility.Collapsed : Visibility.Visible; FreezeButton.Content = "恢复 Space"; }
+        if (frozen is not null) { FrozenLabel.Visibility = clean ? Visibility.Collapsed : Visibility.Visible; FreezeButton.Content = "恢复"; AutomationProperties.SetName(FreezeButton,"恢复 Space"); }
     }
     private void SaveFrame_Click(object sender,RoutedEventArgs e) => SaveFrame();
     private void SaveFrame()
@@ -251,6 +295,7 @@ public partial class MainWindow : Window
     {
         clean = !clean;
         Header.Visibility = Controls.Visibility = clean ? Visibility.Collapsed : Visibility.Visible;
+        ShowTools();
         FrozenLabel.Visibility = !clean && frozen is not null ? Visibility.Visible : Visibility.Collapsed;
         WindowStyle = clean ? WindowStyle.None : WindowStyle.SingleBorderWindow;
         ResizeMode = clean ? ResizeMode.CanResizeWithGrip : ResizeMode.CanResize;
@@ -265,6 +310,8 @@ public partial class MainWindow : Window
         else if (key == Key.D1 && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) cameraPanel?.RestorePreset("整张 A4");
         else if (key == Key.D2 && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) cameraPanel?.RestorePreset("局部推导");
         else if (key == Key.F11 || (key == Key.Escape && clean)) Clean();
+        else if (key == Key.F) FillViewport();
+        else if (key == Key.Tab) { ShowTools();return; }
         else if (key == Key.C) ToggleCrop();
         else if (key == Key.R) Rotate();
         else if (key is Key.D0 or Key.NumPad0) Reset();

@@ -31,6 +31,7 @@ internal sealed class DisplayFrame : IDisposable
         Bgra = ArrayPool<byte>.Shared.Rent(width * height * 4);
         Nv12 = ArrayPool<byte>.Shared.Rent(width * height * 3 / 2);
     }
+    public ViewTransform View { get; set; } = new();
     public int[] Content { get; } = new int[4];
     public long Sequence { get; set; }
     public long CapturedTimestampUs { get; set; }
@@ -165,6 +166,7 @@ internal sealed class VideoPipeline : IDisposable
                         Math.Max(16, (int)(rotatedHeight * settings.Height) & ~1));
                     try
                     {
+                        next.View = settings;
                         NativeVideo.Check(NativeVideo.dc_render(raw, packet.Width, packet.Height, settings.Rotation,
                             settings.X, settings.Y, settings.Width, settings.Height, next.Nv12, next.Width,
                             next.Height, next.Bgra, next.Content));

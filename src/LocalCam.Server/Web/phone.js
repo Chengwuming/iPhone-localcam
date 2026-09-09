@@ -395,7 +395,7 @@ init();
 
 function cameraState() {
     const track = stream?.getVideoTracks()[0], s = track?.getSettings() || {}, c = track?.getCapabilities?.() || {};
-    return { quality: preferences.quality, focus: preferences.focus, busy: photoBusy || starting || commandBusy,
+    return { remoteUi: true, shaded: !shade.hidden, wakeLocked: Boolean(wakeLock && !wakeLock.released), wanted, quality: preferences.quality, focus: preferences.focus, busy: photoBusy || starting || commandBusy,
         acquiring: photoBusy || starting, ready: running, zoomRange: c.zoom || null, focusRange: c.focusDistance || null, canLock: canLockFocus(track), focusLocked: ['none','manual'].includes(s.focusMode),
         settings: { width:s.width,height:s.height,frameRate:s.frameRate,zoom:s.zoom,focusDistance:s.focusDistance,focusMode:s.focusMode },
         photoStatus: photoStatus.textContent };
@@ -403,6 +403,15 @@ function cameraState() {
 async function executeCommand(command) {
     commandBusy = true;
     try {
+        if (command.kind === 'shade') {
+            setShade(command.value === 1); commandResult = shade.hidden ? '手机遮罩已关闭' : '手机遮罩已开启；请保持前台'; return;
+        }
+        if (command.kind === 'capture') {
+            if (photoBusy || starting) throw new Error('手机正在切换相机，请稍后重试');
+            if (command.value === 0) await stop();
+            else { wanted = true; await begin(); if (!running) throw new Error(status.textContent); }
+            commandResult = running ? '手机已开始拍摄' : '手机已停止拍摄；可在电脑重新开始'; return;
+        }
         if (photoBusy || starting || !running) throw new Error('手机忙碌或视频未开始，请稍后重试');
         const track = stream.getVideoTracks()[0], caps = track.getCapabilities?.() || {};
         if (command.kind === 'photo') await captureHD();
@@ -465,5 +474,11 @@ async function syncCamera() {
 setInterval(syncCamera, 100);
 
 const shade=document.querySelector('#stand-shade');
-document.querySelector('#stand-mode').onclick=()=>{shade.hidden=false;};
-shade.onclick=()=>{shade.hidden=true;};
+function setShade(enabled) {
+    shade.hidden = !enabled;
+    document.querySelector('#stand-mode').textContent = enabled ? '关闭黑色遮罩' : '支架模式 · 黑色遮罩';
+    try { localStorage.setItem('deskcam-shade', enabled ? '1' : '0'); } catch {}
+}
+try { setShade(localStorage.getItem('deskcam-shade') === '1'); } catch {}
+document.querySelector('#stand-mode').onclick = () => setShade(shade.hidden);
+shade.onclick = () => setShade(false);

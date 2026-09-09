@@ -55,6 +55,15 @@ internal static class DeskCamTests
         Assert(controls.Snapshot.Pending, "Stale acknowledgement completed command");
         controls.Exchange(state.RootElement,zoomCommand.Id,"applied");
         Assert(!controls.Snapshot.Pending && controls.Snapshot.Result == "applied", "Acknowledgement lost");
+        using var paused = System.Text.Json.JsonDocument.Parse("{\"ready\":false,\"remoteUi\":true}");
+        controls.Exchange(paused.RootElement,0,null);
+        foreach(var kind in new[]{"shade","capture"}) {
+            try { controls.Request(kind,2); throw new Exception("Invalid switch accepted"); } catch(ArgumentException) { }
+            var change=controls.Request(kind,1);
+            Assert(controls.Exchange(paused.RootElement,0,null)==change,"Paused phone cannot receive controls");
+            Assert(controls.Exchange(paused.RootElement,0,null) is null,"Switch command replayed");
+            controls.Exchange(paused.RootElement,change.Id,"applied");
+        }
         var request = photos.Request();
         Assert(photos.Request() == request && photos.TakeRequest() == request && photos.TakeRequest() is null,
             "Photo requests were duplicated or not consumed");
