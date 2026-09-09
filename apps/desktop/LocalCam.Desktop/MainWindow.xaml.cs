@@ -120,14 +120,14 @@ public partial class MainWindow : Window
 
                 }
             }
-                    if(IsVisible&&bitmap is not null&&inspecting&&!clean&&Stopwatch.GetElapsedTime(lastInspect).TotalMilliseconds>=150){
-                        lastInspect=Stopwatch.GetTimestamp();
-                        int w=Math.Min(256,frame.Width),h=Math.Min(150,frame.Height);
-                        var box=new Int32Rect(Math.Clamp((int)(inspectPoint.X*frame.Width)-w/2,0,frame.Width-w),Math.Clamp((int)(inspectPoint.Y*frame.Height)-h/2,0,frame.Height-h),w,h);
-                        InspectImage.Source=new CroppedBitmap(bitmap,box);
-                        var dpi=VisualTreeHelper.GetDpi(this);InspectImage.Width=w/dpi.DpiScaleX;InspectImage.Height=h/dpi.DpiScaleY;
-                        InspectImage.Stretch=Stretch.Fill;
-                    }
+            if(IsVisible&&bitmap is not null&&inspecting&&!clean&&Stopwatch.GetElapsedTime(lastInspect).TotalMilliseconds>=150){
+                lastInspect=Stopwatch.GetTimestamp();
+                int w=Math.Min(256,frame.Width),h=Math.Min(150,frame.Height);
+                var box=new Int32Rect(Math.Clamp((int)(inspectPoint.X*frame.Width)-w/2,0,frame.Width-w),Math.Clamp((int)(inspectPoint.Y*frame.Height)-h/2,0,frame.Height-h),w,h);
+                InspectImage.Source=new CroppedBitmap(bitmap,box);
+                var dpi=VisualTreeHelper.GetDpi(this);InspectImage.Width=w/dpi.DpiScaleX;InspectImage.Height=h/dpi.DpiScaleY;
+                InspectImage.Stretch=Stretch.Fill;
+            }
         }
         else
         {

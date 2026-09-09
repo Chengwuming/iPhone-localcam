@@ -21,7 +21,7 @@ internal sealed class CameraPanel : UserControl, IDisposable
     private readonly TextBlock actual = new(), status = new(), zoomValue = new(), distanceValue = new();
     private readonly Button refocus = new();
     private readonly List<Button> quickZoom = new(), presetButtons = new();
-    private bool initialized, updating, wasPending;
+    private bool updating;
     private string? notice;
     private DateTimeOffset noticeUntil;
     private void Notice(string text){notice=text;noticeUntil=DateTimeOffset.UtcNow.AddSeconds(4);status.Text=text;}
@@ -93,7 +93,7 @@ internal sealed class CameraPanel : UserControl, IDisposable
         try {preferences.Save(preferences.Current with{PaperPresets=presets});Notice("已保存 "+name);}catch(Exception ex){Notice("保存失败："+ex.Message);}
     }
     private void RestorePreset(string name) {
-        if(preferences.Current.PaperPresets?.TryGetValue(name,out var preset)!=true){Notice("先调整画面，再保存到 "+name);return;}
+        if(preferences.Current.PaperPresets is not {} presets||!presets.TryGetValue(name,out var preset)||preset is null){Notice("先调整画面，再保存到 "+name);return;}
         try {
             queuedZoom=queuedDistance=null;
             var command=store.Request("preset",text:JsonSerializer.Serialize(new{quality=preset.Quality,focus=preset.Focus,zoom=preset.Zoom,distance=preset.Distance}));
@@ -102,9 +102,9 @@ internal sealed class CameraPanel : UserControl, IDisposable
     }
     private void Tick() {
         var snapshot=store.Snapshot;bool fresh=DateTimeOffset.UtcNow-snapshot.UpdatedAt<TimeSpan.FromSeconds(3);
-        bool sync=!initialized||wasPending&&!snapshot.Pending;wasPending=snapshot.Pending;
+        bool sync=!snapshot.Pending;
         if(pendingPreset is {} saved&&!snapshot.Pending){if(snapshot.Result.StartsWith("设置已应用"))applyView(saved.View);pendingPreset=null;}
-        if(!fresh){queuedZoom=queuedDistance=null;initialized=false;}
+        if(!fresh){queuedZoom=queuedDistance=null;}
         if(snapshot.State is not {} state){quality.IsEnabled=focus.IsEnabled=zoom.IsEnabled=distance.IsEnabled=refocus.IsEnabled=false;foreach(var button in quickZoom.Concat(presetButtons))button.IsEnabled=false;status.Text="打开手机 DeskCam 后即可调整";return;}
         bool available=fresh&&Flag(state,"ready")&&!Flag(state,"acquiring");
         if(available&&!snapshot.Pending){
@@ -124,7 +124,7 @@ internal sealed class CameraPanel : UserControl, IDisposable
             foreach(ComboBoxItem option in focus.Items){var mode=(string)option.Tag;option.IsEnabled=mode=="auto"||mode=="manual"&&dr||mode=="none"&&Flag(state,"canLock");}
             actual.Text=$"实际 {Number(settings,"width")}×{Number(settings,"height")} · {Number(settings,"zoom")?.ToString("F2")??"—"}×\n焦点 {Number(settings,"focusDistance")?.ToString("F3")??"系统管理"} · {Text(settings,"focusMode")??"系统模式"}";
             status.Text=fresh?(DateTimeOffset.UtcNow<noticeUntil?notice:snapshot.Result):"手机离线；请保持 DeskCam 在前台";
-            if(available)initialized=true;
+
         }finally{updating=false;}
     }
     public void Dispose()=>timer.Stop();

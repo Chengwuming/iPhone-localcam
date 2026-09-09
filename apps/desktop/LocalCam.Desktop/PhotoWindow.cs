@@ -62,7 +62,7 @@ internal sealed class PhotoWindow : Window
         var dpi = VisualTreeHelper.GetDpi(this);
         picture.Width = actualPixels ? current.PixelWidth / dpi.DpiScaleX : Math.Max(16, scroll.ActualWidth - 20);
         picture.Height = actualPixels ? current.PixelHeight / dpi.DpiScaleY : Math.Max(16, scroll.ActualHeight - 20);
-        info.Text = $"完整照片 {current.PixelWidth}×{current.PixelHeight} · {(actualPixels ? "100% 原像素" : "适合窗口")} · 未套用实时裁剪\n{(photo.LastSavedPath is {} path ? "上次保存："+path : "尚未保存到磁盘；本次运行可从“最近一张”重开")}";
+        info.Text = $"完整照片 {current.PixelWidth}×{current.PixelHeight} · {(actualPixels ? "100% 原像素" : "适合窗口")} · {(photo.Source == "system-camera" ? "系统照片" : "高清采集帧")} · 未套用实时裁剪\n{(photo.LastSavedPath is {} path ? "上次保存："+path : "尚未保存到磁盘；本次运行可从“最近一张”重开")}";
     }
     private void CopyPhoto()
     {
