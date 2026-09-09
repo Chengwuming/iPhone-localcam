@@ -1,13 +1,13 @@
-# DeskCam 0.6 开发状态
+# DeskCam 产品状态
 
-主线 codex/deskcam。使用说明见 [DESKCAM_README](../DESKCAM_README.md)。以下描述当前代码，不宣称真机已验收。
+2026-09-10：0.7.0 代码提交 `24721164f0e317f43fbcbfc7bd82c3034af1a29c`，GitHub Actions 构建 [34416312202](https://github.com/Chengwuming/iPhone-localcam/actions/runs/34416312202) 全部成功。本文件可在代码构建后单独更新，实际运行包以程序集版本和外层 DeskCam/BUILD.json 为准。
 
-- 预览常用操作区、当前裁剪帧复制/保存、冻结、纯净模式、100% 细字检查。
-- 可折叠侧栏、采集倍率和焦距连续应用、两组纸面预设。
-- 锁焦/自动对焦按钮与 L/A 快捷键，按实际能力和回读决定状态；不支持时禁用或报错。
-- 1080p30 档位、最高 30fps 的预览刷新；4K10 保留，webcam 固定 1920×1080。
-- 中文输入法下的预览快捷键、窄窗口次要工具收起、内置 F1 帮助。
-- 持久配对、长期入口、保持前台的黑色支架模式；锁屏不能维持 Safari 拍摄。
-- GitHub Actions 编译/原生/托管/JS 测试；本机交付还需真实 WPF、浏览器与图片检查，证据在外层工作区。
+主线是 codex/deskcam。Safari WebCodecs H.264 / WSS → Windows MF/DXVA → 原像素预览、裁剪、复制、保存；MF webcam 单独固定 1080p。没有 JPEG/WebRTC fallback。
 
-测试用 DESKCAM_DATA_DIR 隔离生产配对/证书/设置。临时与历史文件归档，不删除。根目录上游旧 README/STATUS 已归档，不再把 JPEG、phase1/phase2 分支当主线。
+0.7 默认全窗口预览，边缘浮动工具自动隐藏，P 打开相机抽屉；F 等比裁切铺满，0 恢复全幅。手机遮罩/开始/停止可远程控制，遮罩记住上次状态。暗色下拉框、滑杆和焦点反馈统一；窄窗口抽屉避开工具栏，更多操作与抽屉互斥。
+
+摄影权限由 iOS 控制，主屏幕 Web App 可能重复询问。Safari 单站点设置相机允许后，可以在添加到主屏幕时关闭 Open as Web App，使用浏览器入口。系统相机拍照需要手机手势，高清抓拍 H 可从电脑操作。
+
+实际验证位于外层 verification/2026-09-10-preview：真实视频链路、默认预览、竖屏几何、控制/遮罩持久化、4K 和 30fps、保存/复制、窄窗口。Chrome 合成摄像头与模拟摄影能力不是 iPhone 光学或校园网验收。旧状态已保存在 Git 历史与外层 _archive。
+
+使用见 ../DESKCAM_README.md；完整交付/恢复记录由外层 HANDOFF.md、DELIVERY.md 和 docs 管理。
