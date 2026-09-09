@@ -5,11 +5,36 @@
 #include <fstream>
 #include <stdexcept>
 #include <chrono>
+#include <algorithm>
+#include <cmath>
 extern "C" __declspec(dllimport) int dc_create(int,int,void**,int*);
 extern "C" __declspec(dllimport) int dc_decode(void*,const uint8_t*,int,int64_t,int,uint8_t*,int,int*);
 extern "C" __declspec(dllimport) void dc_destroy(void*);
 extern "C" __declspec(dllimport) int dc_render(const uint8_t*,int,int,int,double,double,double,double,uint8_t*,int,int,uint8_t*,int*);
 static void check(bool ok,const char* msg){if(!ok)throw std::runtime_error(msg);}
+static void verifyPortraitGeometry(){
+    const int ow=1920,oh=1080;
+    std::vector<uint8_t> out(ow*oh*3/2),bgra(ow*oh*4);
+    for(int portrait=0;portrait<2;++portrait){
+        const int w=portrait?1080:1920,h=portrait?1920:1080;
+        std::vector<uint8_t> raw(w*h*3/2,128);
+        std::fill(raw.begin(),raw.begin()+w*h,32);
+        for(int y=0;y<h;++y)for(int x=0;x<w;++x)
+            if((x-w/2)*(x-w/2)+(y-h/2)*(y-h/2)<=100*100)raw[y*w+x]=235;
+        for(int rotation=0;rotation<4;++rotation){
+            int rect[4]{};
+            check(dc_render(raw.data(),w,h,rotation,0,0,1,1,out.data(),ow,oh,bgra.data(),rect)>=0,"Portrait render failed");
+            int rw=(rotation&1)?h:w,rh=(rotation&1)?w:h;
+            check(std::abs(rect[2]*rh-rect[3]*rw)<=2*std::max(rw,rh),"Output aspect ratio changed");
+            int minX=ow,maxX=-1,minY=oh,maxY=-1;
+            for(int y=0;y<oh;++y)for(int x=0;x<ow;++x)if(out[y*ow+x]>225){
+                minX=std::min(minX,x);maxX=std::max(maxX,x);minY=std::min(minY,y);maxY=std::max(maxY,y);
+            }
+            check(maxX-minX>100 && std::abs((maxX-minX)-(maxY-minY))<=2,"Circle distorted by native rotation");
+        }
+    }
+    std::puts("PASS: portrait/landscape circles preserve aspect ratio in all 4 rotations");
+}
 int main(int argc,char** argv){
  try{
     check(argc==2,"Usage: DeskCamVideoTest fixture.dcv");
@@ -51,6 +76,7 @@ int main(int argc,char** argv){
     check(dc_render(raw.data(),w,h,0,-.1,0,1,1,out.data(),w,h,bgra.data(),rect)<0,"Invalid crop was accepted");
     // A fresh session must decode the first keyframe again after a disconnect.
     check(dc_create(w,h,&decoder,&hardware)>=0,"Recreate failed");dc_destroy(decoder);
+    verifyPortraitGeometry();
     double seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-start).count();
     std::printf("PASS: %d/%d frames, decode+render %.1f fps, crop/rotation/recreate verified\n",frames,packets,frames/seconds);
     return 0;

@@ -1,5 +1,7 @@
 # DeskCam 使用说明
 
+0.2.1 修复：手机先将相机显示方向转换为实际像素，再进行 H.264 编码，避免竖屏帧被横竖错配压扁。升级后请重新打开手机 DeskCam 页面。当前没有添加镜头切换或相机变焦；本次确认 iPhone 17e 为单后摄，变焦方案另行评估。
+
 首次安装：把完整发布包解压到固定目录，双击 Install-DeskCam.cmd，完成一次 Windows 管理员授权。注册后不要单独移动 VirtualCamera 文件夹。
 
 日常打开：双击 Start-DeskCam.cmd。关闭窗口默认缩到托盘；设置里可开启随 Windows 启动。摄像头名称沿用 LocalCam Camera。

@@ -1,0 +1,68 @@
+<!doctype html><meta charset="utf-8"><title>DeskCam orientation regression</title>
+<style>body{background:#18221c;color:#eee;font:16px sans-serif}canvas{max-width:240px;max-height:260px;margin:10px}section{display:inline-block;vertical-align:top}pre{white-space:pre-wrap}</style>
+<h1>DeskCam orientation regression</h1><pre id="result">Running…</pre><div id="pictures"></div>
+<script type="module">
+import { cameraFrame } from '../src/LocalCam.Server/Web/camera-frame.mjs';
+const check = (value, message) => { if (!value) throw Error(message); };
+function circleBounds(context) {
+    const {width,height}=context.canvas, data=context.getImageData(0,0,width,height).data;
+    let minX=width,maxX=-1,minY=height,maxY=-1;
+    for(let y=0;y<height;y++)for(let x=0;x<width;x++) {
+        const i=(y*width+x)*4;
+        if(data[i]>230 && data[i+1]>230 && data[i+2]>230) {
+            minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);
+        }
+    }
+    return [maxX-minX+1,maxY-minY+1];
+}
+async function codecRoundTrip(frame,width,height) {
+    let decoded, codecError;
+    const decoder=new VideoDecoder({output:f=>{decoded?.close();decoded=f;},error:e=>codecError=e});
+    const encoder=new VideoEncoder({output:(chunk,metadata)=>{
+        if(metadata.decoderConfig) decoder.configure({...metadata.decoderConfig,rotation:0,flip:false});
+        decoder.decode(chunk);
+    },error:e=>codecError=e});
+    try {
+        encoder.configure({codec:'avc1.420028',width,height,bitrate:8000000,framerate:20,latencyMode:'realtime',avc:{format:'annexb'}});
+        encoder.encode(frame,{keyFrame:true});await encoder.flush();await decoder.flush();
+        if(codecError)throw codecError;
+        check(decoded,'No decoded frame');
+        const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
+        const context=canvas.getContext('2d');context.drawImage(decoded,0,0);
+        return {canvas,context};
+    } finally {decoded?.close();encoder.close();decoder.close();}
+}
+window.testResults=[];
+try {
+    for(const [width,height] of [[640,360],[360,640]])for(const rotation of [0,90,180,270]) {
+        const raw=document.createElement('canvas');raw.width=width;raw.height=height;
+        const c=raw.getContext('2d');c.fillStyle='#202020';c.fillRect(0,0,width,height);
+        c.fillStyle='#fff';c.beginPath();c.arc(width/2,height/2,50,0,Math.PI*2);c.fill();
+        for(const [color,x,y] of [['red',0,0],['lime',width-40,0],['blue',0,height-40],['yellow',width-40,height-40]]) {
+            c.fillStyle=color;c.fillRect(x,y,40,40);
+        }
+        const source=new VideoFrame(raw,{timestamp:0,rotation});
+        const w=source.displayWidth,h=source.displayHeight;
+        check(source.rotation===rotation,'Browser cannot exercise rotation metadata');
+        if(width===640 && rotation===90) {
+            const legacy=await codecRoundTrip(source,w,h);
+            window.legacyControl={circle:circleBounds(legacy.context),description:'Direct rotated VideoFrame, Annex B without rotation metadata'};
+        }
+        const raster=document.createElement('canvas'),context=raster.getContext('2d',{alpha:false});
+        const upright=cameraFrame(source,context,w,h,0);
+        try {
+            check(upright.rotation===0 && upright.codedWidth===w && upright.codedHeight===h,'Orientation not baked into pixels');
+            const result=await codecRoundTrip(upright,w,h);
+            const [cw,ch]=circleBounds(result.context);
+            check(Math.abs(cw-ch)<=2 && cw>=98 && ch>=98,'Circle was stretched: '+cw+'×'+ch);
+            const expected=[[255,0,0],[0,0,255],[255,255,0],[0,255,0]][rotation/90];
+            const pixel=result.context.getImageData(12,12,1,1).data;
+            check(expected.every((v,i)=>Math.abs(v-pixel[i])<35),'Wrong corner after rotation '+rotation);
+            window.testResults.push({source:width+'×'+height,rotation,encoded:w+'×'+h,circle:cw+'×'+ch,pass:true});
+            const box=document.createElement('section');box.append(document.createTextNode(width+'×'+height+' / '+rotation+'°'),result.canvas);document.querySelector('#pictures').append(box);
+        } finally {upright.close();source.close();}
+    }
+    document.querySelector('#result').textContent='PASS: '+window.testResults.length+' orientation + H.264 round trips\n'+JSON.stringify(window.testResults,null,2);
+    window.testDone=true;
+} catch(error) {document.querySelector('#result').textContent='FAIL: '+error.stack;window.testError=error.message;window.testDone=true;}
+</script>

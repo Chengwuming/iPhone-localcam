@@ -1,4 +1,7 @@
+import { cameraFrame } from './camera-frame.mjs';
 const camera = document.querySelector('#camera');
+const surface = document.createElement('canvas');
+const surfaceContext = surface.getContext('2d', { alpha: false });
 const status = document.querySelector('#status');
 const button = document.querySelector('#start');
 const metrics = document.querySelector('#metrics');
@@ -74,7 +77,7 @@ function capture(now) {
     const timestamp = Math.round(now * 1000);
     let frame;
     try {
-        frame = new VideoFrame(camera, { timestamp });
+        frame = cameraFrame(camera, surfaceContext, width, height, timestamp);
         pending.set(timestamp, performance.now());
         // Some encoders may drop input frames in realtime mode. Bound timestamp tracking too.
         while (pending.size > 12) pending.delete(pending.keys().next().value);
@@ -153,6 +156,7 @@ async function begin() {
                 '发送缓冲 ' + Math.round(connection.bufferedAmount / 1024) + ' KB · 编码峰值 ' + Math.round(maxEncodeMs) + ' ms\n' +
                 '跳过 ' + skips + ' 帧 · 已运行 ' + Math.floor((now - startedAt) / 1000) + ' 秒\n' +
                 '相机设置 ' + track.width + '×' + track.height + ' @ ' + track.frameRate + '\n' +
+                '像素编码 ' + surface.width + '×' + surface.height + '\n' +
                 (metrics.dataset.codec || '') + '\n' + navigator.userAgent;
             sent = 0; byteCount = 0; skips = 0; maxEncodeMs = 0; windowStart = now;
             if (connection.bufferedAmount > 262144 || now - lastOutput > 4000) reconnect('视频暂时停滞');

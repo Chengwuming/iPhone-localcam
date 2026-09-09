@@ -81,6 +81,7 @@ public static class LocalCamServerHost
         });
         app.MapGet("/phone", (HttpContext c) => c.Request.IsHttps ? Asset("phone.html", "text/html; charset=utf-8") : Results.NotFound());
         app.MapGet("/phone.js", (HttpContext c) => c.Request.IsHttps ? Asset("phone.js", "text/javascript; charset=utf-8") : Results.NotFound());
+        app.MapGet("/camera-frame.mjs", (HttpContext c) => c.Request.IsHttps ? Asset("camera-frame.mjs", "text/javascript; charset=utf-8") : Results.NotFound());
         app.MapGet("/manifest.json", (HttpContext c) => c.Request.IsHttps ? Asset("manifest.json", "application/manifest+json") : Results.NotFound());
         app.MapGet("/icon.svg", () => Asset("icon.svg", "image/svg+xml"));
         app.MapPost("/api/pair", async (HttpContext c) =>
