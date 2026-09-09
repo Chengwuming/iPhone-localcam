@@ -52,8 +52,9 @@ internal sealed class PhotoWindow : Window
     }
     private void ResizePicture()
     {
-        picture.Width = actualPixels ? current.PixelWidth : Math.Max(16, scroll.ActualWidth - 20);
-        picture.Height = actualPixels ? current.PixelHeight : Math.Max(16, scroll.ActualHeight - 20);
+        var dpi = VisualTreeHelper.GetDpi(this);
+        picture.Width = actualPixels ? current.PixelWidth / dpi.DpiScaleX : Math.Max(16, scroll.ActualWidth - 20);
+        picture.Height = actualPixels ? current.PixelHeight / dpi.DpiScaleY : Math.Max(16, scroll.ActualHeight - 20);
         info.Text = $"完整照片 {current.PixelWidth}×{current.PixelHeight} · {(actualPixels ? "100% 原像素" : "适合窗口")} · 未套用实时裁剪";
     }
     private void CopyPhoto()

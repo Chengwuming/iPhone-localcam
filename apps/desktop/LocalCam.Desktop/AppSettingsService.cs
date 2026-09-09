@@ -31,10 +31,8 @@ internal sealed class AppSettingsService
 {
     private const string StartupValueName = "LocalCam";
     private const string StartupRegistryPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    private readonly string settingsPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "LocalCam",
-        "settings.json");
+    private readonly string settingsPath = Path.Combine(Environment.GetEnvironmentVariable("DESKCAM_DATA_DIR") ??
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LocalCam"), "settings.json");
 
     public LocalCamSettings Current { get; private set; } = LocalCamSettings.Default;
 
