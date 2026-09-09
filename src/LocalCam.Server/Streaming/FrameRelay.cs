@@ -17,6 +17,11 @@ public sealed class FrameRelay
     public DateTimeOffset? LastFrameAt => Interlocked.Read(ref lastFrameTicks) is > 0 and var ticks ? new DateTimeOffset(ticks, TimeSpan.Zero) : null;
     public string? Error { get; private set; }
     public void RequestKeyFrame() => Interlocked.Exchange(ref requestKey, 1);
+    public void Disconnect()
+    {
+        Interlocked.Increment(ref connectionId);
+        Interlocked.Exchange(ref activePhone, null)?.Abort();
+    }
     public async Task ReceivePhoneFramesAsync(WebSocket phone, CancellationToken cancellationToken)
     {
         var previous = Interlocked.Exchange(ref activePhone, phone);

@@ -35,7 +35,7 @@
 
             <StackPanel>
                 <TextBlock Text="连接 iPhone" FontSize="26" FontWeight="SemiBold" />
-                <TextBlock Text="首次先安装证书；之后每次只需扫描连接二维码" Margin="0,5,0,0" Foreground="#605E5C" FontSize="14" />
+                <TextBlock Text="首次信任证书并扫码配对；以后直接打开手机 DeskCam" Margin="0,5,0,0" Foreground="#605E5C" FontSize="14" />
             </StackPanel>
 
             <Border Grid.Row="1" Margin="0,20,0,0" Padding="18" Background="#F5F9FF" BorderBrush="#CFE4FF" BorderThickness="1" CornerRadius="10">

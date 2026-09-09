@@ -41,7 +41,9 @@ public sealed class LocalCertificateAuthority
 
         request.CertificateExtensions.Add(subjectAlternativeNames.Build());
         var serial = RandomNumberGenerator.GetBytes(16);
-        using var signed = request.Create(authority, DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddDays(14), serial);
+        var expires = DateTimeOffset.UtcNow.AddYears(1);
+        if (expires > authority.NotAfter.ToUniversalTime()) expires = authority.NotAfter.ToUniversalTime();
+        using var signed = request.Create(authority, DateTimeOffset.UtcNow.AddMinutes(-5), expires, serial);
         using var signedWithKey = signed.CopyWithPrivateKey(key);
         var pfx = signedWithKey.Export(X509ContentType.Pfx);
         return X509CertificateLoader.LoadPkcs12(pfx, password: null, X509KeyStorageFlags.Exportable);

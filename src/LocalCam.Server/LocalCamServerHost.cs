@@ -99,6 +99,7 @@ public static class LocalCamServerHost
         {
             if (!IsLocal(c) || c.Request.Headers.ContainsKey("Origin")) return Results.NotFound();
             devices.Revoke();
+            relay.Disconnect();
             return Results.Ok();
         });
         app.Map("/ws/phone", async c =>
