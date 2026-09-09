@@ -37,6 +37,8 @@ namespace winrt::WindowsSample::implementation
         RETURN_IF_FAILED(MFCreateMediaType(&spMediaType));
         spMediaType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
         spMediaType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_NV12);
+        spMediaType->SetUINT32(MF_MT_YUV_MATRIX, MFVideoTransferMatrix_BT709);
+        spMediaType->SetUINT32(MF_MT_VIDEO_NOMINAL_RANGE, MFNominalRange_16_235);
         spMediaType->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
         spMediaType->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE);
         MFSetAttributeSize(spMediaType.get(), MF_MT_FRAME_SIZE, NUM_IMAGE_COLS, NUM_IMAGE_ROWS);

@@ -95,10 +95,11 @@ public partial class SettingsWindow : Window
                 closeBehavior = CloseBehavior.Exit;
             }
 
-            settingsService.Save(new LocalCamSettings(
-                closeBehavior,
-                StartWithWindowsCheckBox.IsChecked == true,
-                settingsService.Current.WindowPlacement));
+            settingsService.Save(settingsService.Current with
+            {
+                CloseBehavior = closeBehavior,
+                StartWithWindows = StartWithWindowsCheckBox.IsChecked == true
+            });
             DialogResult = true;
         }
         catch (Exception exception)

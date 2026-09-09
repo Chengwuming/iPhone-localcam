@@ -195,30 +195,44 @@ API int dc_render(const uint8_t* input,int sw,int sh,int rotation,double cx,doub
     dw=std::clamp(dw&~1,2,ow);dh=std::clamp(dh&~1,2,oh);
     const int left=((ow-dw)/2)&~1,top=((oh-dh)/2)&~1;
     rect[0]=left;rect[1]=top;rect[2]=dw;rect[3]=dh;
-    std::memset(output,16,ow*oh);std::memset(output+ow*oh,128,ow*oh/2);
-    for(int plane=0;plane<2;++plane) {
-        int unit=plane?2:1, pw=sw/unit,ph=sh/unit;
-        int destW=dw/unit,destH=dh/unit,rotW=rw/unit,rotH=rh/unit;
-        const auto src=input+(plane?sw*sh:0);
-        auto dst=output+(plane?ow*oh:0)+(top/unit)*ow+left;
-        for(int y=0;y<destH;++y)for(int x=0;x<destW;++x) {
-            double rx=cx*rotW+(x+0.5)*cw*rotW/destW-0.5;
-            double ry=cy*rotH+(y+0.5)*ch*rotH/destH-0.5;
-            double sx=rx,sy=ry;
-            if(rotation==1){sx=ry;sy=ph-1-rx;}
-            else if(rotation==2){sx=pw-1-rx;sy=ph-1-ry;}
-            else if(rotation==3){sx=pw-1-ry;sy=rx;}
-            sx=std::clamp(sx,0.0,static_cast<double>(pw-1));sy=std::clamp(sy,0.0,static_cast<double>(ph-1));
-            int x0=static_cast<int>(sx),y0=static_cast<int>(sy),x1=std::min(x0+1,pw-1),y1=std::min(y0+1,ph-1);
-            double fx=sx-x0,fy=sy-y0;
-            for(int c=0;c<unit;++c){
-                double a=src[y0*sw+x0*unit+c]*(1-fx)+src[y0*sw+x1*unit+c]*fx;
-                double b=src[y1*sw+x0*unit+c]*(1-fx)+src[y1*sw+x1*unit+c]*fx;
-                dst[y*ow+x*unit+c]=static_cast<uint8_t>(std::round(a*(1-fy)+b*fy));
+    if(rotation==0 && cx==0 && cy==0 && cw==1 && ch==1 && sw==ow && sh==oh) {
+        std::memcpy(output,input,ow*oh*3/2);
+    } else {
+        std::memset(output,16,ow*oh);std::memset(output+ow*oh,128,ow*oh/2);
+        struct Axis { int first,second,fraction; };
+        for(int plane=0;plane<2;++plane) {
+            int unit=plane?2:1;
+            int destW=dw/unit,destH=dh/unit,rotW=rw/unit,rotH=rh/unit;
+            const auto src=input+(plane?sw*sh:0);
+            auto dst=output+(plane?ow*oh:0)+(top/unit)*ow+left;
+            std::vector<Axis> xx(destW),yy(destH);
+            auto fillAxis=[](std::vector<Axis>& axis,int length,double start,double extent,int multiplier,bool reversed) {
+                for(size_t i=0;i<axis.size();++i){
+                    double position=start*length+(i+0.5)*extent*length/axis.size()-0.5;
+                    if(reversed)position=length-1-position;
+                    position=std::clamp(position,0.0,static_cast<double>(length-1));
+                    int fixed=static_cast<int>(position*256.0),lo=fixed>>8,hi=std::min(lo+1,length-1);
+                    axis[i]={lo*multiplier,hi*multiplier,fixed&255};
+                }
+            };
+            fillAxis(xx,rotW,cx,cw,(rotation&1)?sw:unit,rotation==1||rotation==2);
+            fillAxis(yy,rotH,cy,ch,(rotation&1)?unit:sw,rotation==2||rotation==3);
+            for(int y=0;y<destH;++y) {
+                const auto ya=yy[y];int fy=ya.fraction;
+                const auto row0=src+ya.first,row1=src+ya.second;
+                auto target=dst+y*ow;
+                for(int x=0;x<destW;++x) {
+                    const auto xa=xx[x];int fx=xa.fraction;
+                    for(int c=0;c<unit;++c){
+                        int a=row0[xa.first+c]*(256-fx)+row0[xa.second+c]*fx;
+                        int b=row1[xa.first+c]*(256-fx)+row1[xa.second+c]*fx;
+                        target[x*unit+c]=static_cast<uint8_t>((a*(256-fy)+b*fy+32768)>>16);
+                    }
+                }
             }
         }
     }
-    // BT.709 limited range. The phone's encoder is configured with BT.709 input.
+    // Canonical display and virtual camera output: BT.709 limited range.
     for(int y=0;y<oh;++y)for(int x=0;x<ow;++x){
         int l=std::max(0,static_cast<int>(output[y*ow+x])-16);
         int uv=ow*oh+(y/2)*ow+(x&~1),u=output[uv]-128,v=output[uv+1]-128;

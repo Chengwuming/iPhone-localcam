@@ -97,7 +97,7 @@ public static class LocalCamServerHost
             Results.Json(new { paired = true }) : Results.StatusCode(403));
         app.MapPost("/api/unpair", (HttpContext c) =>
         {
-            if (!IsLocal(c)) return Results.NotFound();
+            if (!IsLocal(c) || c.Request.Headers.ContainsKey("Origin")) return Results.NotFound();
             devices.Revoke();
             return Results.Ok();
         });

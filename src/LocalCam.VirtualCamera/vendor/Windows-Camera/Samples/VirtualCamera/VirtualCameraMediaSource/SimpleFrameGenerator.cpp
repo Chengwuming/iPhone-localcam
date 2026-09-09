@@ -277,9 +277,9 @@ bool SimpleFrameGenerator::TryCopyLocalCamRgb32(BYTE* pBuf, DWORD len, LONG pitc
                 return static_cast<BYTE>(min(255, max(0, value)));
             };
 
-            destination[column * 4] = clampByte((298 * c + 516 * u + 128) >> 8);
-            destination[column * 4 + 1] = clampByte((298 * c - 100 * u - 208 * v + 128) >> 8);
-            destination[column * 4 + 2] = clampByte((298 * c + 409 * v + 128) >> 8);
+            destination[column * 4] = clampByte((298 * c + 541 * u + 128) >> 8);
+            destination[column * 4 + 1] = clampByte((298 * c - 55 * u - 136 * v + 128) >> 8);
+            destination[column * 4 + 2] = clampByte((298 * c + 459 * v + 128) >> 8);
             destination[column * 4 + 3] = 255;
         }
     }
@@ -485,9 +485,9 @@ bool SimpleFrameGenerator::TryCopyLocalCamPipe(BYTE* pBuf, DWORD len, LONG pitch
             {
                 return static_cast<BYTE>(min(255, max(0, value)));
             };
-            destination[column * 4] = clampByte((298 * c + 516 * u + 128) >> 8);
-            destination[column * 4 + 1] = clampByte((298 * c - 100 * u - 208 * v + 128) >> 8);
-            destination[column * 4 + 2] = clampByte((298 * c + 409 * v + 128) >> 8);
+            destination[column * 4] = clampByte((298 * c + 541 * u + 128) >> 8);
+            destination[column * 4 + 1] = clampByte((298 * c - 55 * u - 136 * v + 128) >> 8);
+            destination[column * 4 + 2] = clampByte((298 * c + 459 * v + 128) >> 8);
             destination[column * 4 + 3] = 255;
         }
     }

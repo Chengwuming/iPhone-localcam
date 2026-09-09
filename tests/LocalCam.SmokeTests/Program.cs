@@ -59,6 +59,7 @@ using (var updateHttp = new HttpClient(new StaticReleaseHandler()))
         StringComparison.Ordinal), "The installer asset must be selected by its stable name.");
 }
 
+DeskCamTests.Run();
 Console.WriteLine("LocalCam smoke tests passed.");
 
 static void Assert(bool condition, string message)
