@@ -38,6 +38,18 @@ internal static class DeskCamTests
         }
         finally { if (Directory.Exists(path)) Directory.Delete(path, true); }
         var photos = new PhotoStore();
+        var controls = new CameraControlStore();
+        try { controls.Request("zoom",2); throw new Exception("Offline command accepted"); } catch (InvalidOperationException) { }
+        using var state = System.Text.Json.JsonDocument.Parse("{\"ready\":true,\"settings\":{\"zoom\":1}}");
+        controls.Exchange(state.RootElement,0,null);
+        var zoomCommand = controls.Request("zoom",2);
+        Assert(controls.Exchange(state.RootElement,0,null) == zoomCommand, "Camera command not delivered");
+        Assert(controls.Exchange(state.RootElement,0,null) is null, "Camera command replayed");
+        Assert(controls.Snapshot.Pending, "Command completed without acknowledgement");
+        controls.Exchange(state.RootElement,zoomCommand.Id+1,"wrong acknowledgement");
+        Assert(controls.Snapshot.Pending, "Stale acknowledgement completed command");
+        controls.Exchange(state.RootElement,zoomCommand.Id,"applied");
+        Assert(!controls.Snapshot.Pending && controls.Snapshot.Result == "applied", "Acknowledgement lost");
         var request = photos.Request();
         Assert(photos.Request() == request && photos.TakeRequest() == request && photos.TakeRequest() is null,
             "Photo requests were duplicated or not consumed");

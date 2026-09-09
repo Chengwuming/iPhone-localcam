@@ -70,7 +70,7 @@ public partial class App : System.Windows.Application
                 : $"{startupError}\n虚拟摄像头启动失败：{exception.Message}";
         }
 
-        var mainWindow = new MainWindow(settingsService, video, virtualCameraSession?.StatusText, startupError, server?.Photos);
+        var mainWindow = new MainWindow(settingsService, video, virtualCameraSession?.StatusText, startupError, server?.Photos, server?.Camera);
         MainWindow = mainWindow;
         trayIconService = new TrayIconService(mainWindow, settingsService, RequestExit);
         showRequestTask = ListenForShowRequestsAsync(lifetime.Token);

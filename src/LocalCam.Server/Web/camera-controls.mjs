@@ -17,24 +17,6 @@ export async function applyVerified(track, changes) {
     }
     return actual;
 }
-export async function takePhoto(track) {
-    if (typeof ImageCapture === 'undefined' || !ImageCapture.prototype.takePhoto)
-        throw new Error('此浏览器未提供照片拍摄接口，请点“系统相机拍照”');
-    const capture = new ImageCapture(track);
-    let options = {};
-    if (capture.getPhotoCapabilities) {
-        try {
-            const c = await capture.getPhotoCapabilities();
-            if (c.imageWidth?.max > 0 && c.imageWidth.max <= 8192) options.imageWidth = c.imageWidth.max;
-            if (c.imageHeight?.max > 0 && c.imageHeight.max <= 8192) options.imageHeight = c.imageHeight.max;
-        } catch { /* takePhoto may be supported without photo capabilities. */ }
-    }
-    try { return await capture.takePhoto(options); }
-    catch (error) {
-        if (Object.keys(options).length && ['OverconstrainedError', 'NotSupportedError'].includes(error.name)) return capture.takePhoto();
-        throw error;
-    }
-}
 export async function preparePhoto(blob) {
     // Rasterization applies EXIF orientation and strips metadata. Keep up to 16 MP
     // to bound phone/desktop memory; never upscale a lower-resolution photo.
@@ -48,4 +30,32 @@ export async function preparePhoto(blob) {
         if (!jpeg) throw new Error('照片转换失败');
         return { jpeg, width: canvas.width, height: canvas.height };
     } finally { image.close(); }
+}
+
+export async function deadline(promise, milliseconds, message) {
+    let timer;
+    try { return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), milliseconds); })]); }
+    finally { clearTimeout(timer); }
+}
+export async function highResolutionPhoto(video) {
+    // Wait for fresh frames after format/zoom changes, then take a native-resolution raster.
+    let callback;
+    try {
+        await deadline(new Promise(resolve => {
+            const start = performance.now();
+            const next = () => {
+                if (performance.now() - start >= 450) resolve();
+                else callback = video.requestVideoFrameCallback(next);
+            };
+            callback = video.requestVideoFrameCallback(next);
+        }), 8000, '高分辨率相机没有返回新画面');
+    } finally { if (callback) video.cancelVideoFrameCallback(callback); }
+    const width = video.videoWidth, height = video.videoHeight;
+    if (width * height <= 1920 * 1080) throw new Error('相机仅返回 ' + width + '×' + height + '，未达到高清抓拍分辨率');
+    if (width * height > 16000000) throw new Error('相机返回的画面超过抓拍尺寸限制');
+    const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
+    canvas.getContext('2d', {alpha:false}).drawImage(video,0,0,width,height);
+    const blob = await deadline(new Promise(resolve => canvas.toBlob(resolve,'image/jpeg',.97)), 8000, '高清图片生成超时');
+    if (!blob) throw new Error('高清图片生成失败');
+    return blob;
 }

@@ -17,6 +17,8 @@ public partial class MainWindow : Window
     private readonly AppSettingsService settings;
     private readonly VideoPipeline? pipeline;
     private readonly PhotoStore? photos;
+    private readonly CameraControlStore? camera;
+    private CameraWindow? cameraWindow;
     private long shownPhoto;
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(50) };
     private WriteableBitmap? bitmap;
@@ -32,9 +34,9 @@ public partial class MainWindow : Window
     [DllImport("user32.dll")] private static extern bool RegisterHotKey(IntPtr window, int id, uint modifiers, uint key);
     [DllImport("user32.dll")] private static extern bool UnregisterHotKey(IntPtr window, int id);
 
-    internal MainWindow(AppSettingsService settings, VideoPipeline? pipeline, string? cameraStatus, string? startupError, PhotoStore? photos = null)
+    internal MainWindow(AppSettingsService settings, VideoPipeline? pipeline, string? cameraStatus, string? startupError, PhotoStore? photos = null, CameraControlStore? camera = null)
     {
-        this.settings = settings; this.pipeline = pipeline; this.photos = photos;
+        this.settings = settings; this.pipeline = pipeline; this.photos = photos; this.camera = camera;
         InitializeComponent();
         CameraText.Text = cameraStatus ?? "虚拟摄像头未启动";
         if (startupError is not null) EmptyText.Text = startupError;
@@ -76,6 +78,13 @@ public partial class MainWindow : Window
     }
     private void Tick()
     {
+        if (camera?.Snapshot is { } cameraState)
+        {
+            CaptureText.Text = cameraState.Pending ? cameraState.Result : cameraState.State is { } state &&
+                state.TryGetProperty("photoStatus", out var message) ? message.GetString() : "";
+            if (!cameraState.Pending && (cameraState.Result.StartsWith("操作失败") || cameraState.Result.StartsWith("手机未完成")))
+                CaptureText.Text += " · " + cameraState.Result;
+        }
         if (photos?.Latest is { } photo && photo.Sequence != shownPhoto)
         {
             shownPhoto = photo.Sequence;
@@ -143,6 +152,14 @@ public partial class MainWindow : Window
         catch (Exception ex) { StatusText.Text = "拍照请求失败：" + ex.Message; statusTick = Stopwatch.GetTimestamp() + Stopwatch.Frequency * 3; }
     }
     private void Settings_Click(object sender, RoutedEventArgs e) => new SettingsWindow(settings) { Owner = this }.ShowDialog();
+    private void CameraControls_Click(object sender, RoutedEventArgs e)
+    {
+        if (camera is null) return;
+        if (cameraWindow is not null) { cameraWindow.Activate(); return; }
+        cameraWindow = new CameraWindow(camera) { Owner = this };
+        cameraWindow.Closed += (_,_) => cameraWindow = null;
+        cameraWindow.Show();
+    }
     private void Resume() { frozen?.Dispose(); frozen = null; FrozenLabel.Visibility = Visibility.Collapsed; FreezeButton.Content = "冻结 Space"; }
     private void Rotate()
     {

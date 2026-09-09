@@ -24,18 +24,19 @@ select,input[type=range]{width:100%;font:inherit;margin:8px 0 12px}select{paddin
 <video id="camera" muted autoplay playsinline></video>
 <p id="status">正在检查连接…</p>
 <button id="start" disabled>开始拍摄</button>
-<section class="panel" aria-label="画质和相机控制">
+<p class="note">连接后请在电脑点“相机控制”调整清晰度、倍率和焦点。</p>
+<details><summary>手机备用相机控制</summary><section class="panel" aria-label="画质和相机控制">
 <label for="quality">实时清晰度</label><select id="quality"><option value="paper">纸面清晰 1080p · 15 fps</option><option value="balanced">标准 1080p · 20 fps</option><option value="economy">省流 720p · 20 fps</option></select>
 <p class="note">纸面模式提高编码质量；失焦不会因提高码率而变清楚。设置会保存。</p>
 <label for="focus-mode">对焦方式</label><select id="focus-mode" disabled><option>等待相机能力</option></select>
 <div id="focus-range" hidden><label for="focus-distance">手动焦点位置 <output id="focus-value"></output></label><input id="focus-distance" type="range"></div>
 <button id="refocus" class="stop" disabled>重新自动对焦</button><p id="focus-status" class="note">是否清晰需要看实际纸面，模式状态不等于已经对焦成功。</p>
 <label for="camera-zoom">相机倍率 <output id="zoom-value"></output></label><input id="camera-zoom" type="range" disabled><p id="zoom-status" class="note">等待相机能力。这项控制手机采集端倍率，不是电脑裁剪。</p>
-</section>
+</section></details>
 <section class="panel" aria-label="高分辨率照片">
-<button id="capture-hd" disabled>Capture HD · 拍照到电脑</button>
+<button id="capture-hd" disabled>Capture HD · 高清抓拍到电脑</button>
 <button id="system-photo" class="stop">系统相机拍照</button><input id="photo-file" type="file" accept="image/*" capture="environment" hidden>
-<p id="photo-status" class="note">拍摄完整照片，电脑弹窗可放大、旋转、复制和保存。拍照时实时画面可能短暂停顿。</p>
+<p id="photo-status" class="note">高清抓拍会短暂切换高分辨率采集，成功后在电脑弹窗中查看、复制或保存；也可使用系统相机拍摄照片。</p>
 </section>
 <p class="note">把手机放到支架上，保持此页面在前台。画面只传到你的电脑。<br>旋转、裁剪和截图在电脑上操作。</p>
 <p id="install" class="note" hidden>首次连接成功后，可以从 Safari 的分享菜单将 DeskCam 添加到主屏幕。</p>

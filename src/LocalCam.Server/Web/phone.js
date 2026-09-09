@@ -1,5 +1,5 @@
 import { cameraFrame } from './camera-frame.mjs';
-import { qualities, adjustable, applyVerified, takePhoto, preparePhoto } from './camera-controls.mjs';
+import { qualities, adjustable, applyVerified, preparePhoto, deadline, highResolutionPhoto } from './camera-controls.mjs';
 const quality = document.querySelector('#quality');
 const focusMode = document.querySelector('#focus-mode'), focusDistance = document.querySelector('#focus-distance');
 const zoom = document.querySelector('#camera-zoom'), hdButton = document.querySelector('#capture-hd');
@@ -9,7 +9,8 @@ try { Object.assign(preferences, JSON.parse(localStorage.getItem('deskcam-camera
 if (!Object.hasOwn(qualities, preferences.quality)) preferences.quality = 'paper';
 quality.value = preferences.quality;
 const savePreferences = () => { try { localStorage.setItem('deskcam-camera-settings', JSON.stringify(preferences)); } catch {} };
-let photoBusy = false, photoPolling = false, systemPicker = false;
+let photoBusy = false, systemPicker = false;
+let pairedReady = false, commandBusy = false, commandAck = 0, commandResult = '', syncBusy = false;
 const camera = document.querySelector('#camera');
 const surface = document.createElement('canvas');
 const surfaceContext = surface.getContext('2d', { alpha: false });
@@ -178,12 +179,6 @@ async function begin() {
                 (metrics.dataset.codec || '') + '\n' + navigator.userAgent;
             sent = 0; byteCount = 0; skips = 0; maxEncodeMs = 0; windowStart = now;
             if (!photoBusy && (connection.bufferedAmount > 262144 || now - lastOutput > 4000)) reconnect('视频暂时停滞');
-            if (!photoBusy && !photoPolling) {
-                photoPolling = true;
-                fetch('/api/photo/request', { signal: AbortSignal.timeout(3000) }).then(r => r.ok ? r.json() : {}).then(request => {
-                    if (gen === generation && request.id) captureHD();
-                }).catch(() => {}).finally(() => { photoPolling = false; });
-            }
         }, 1000);
     } catch (error) {
         if (gen !== generation) return;
@@ -248,7 +243,7 @@ quality.onchange = () => {
     if (wanted && !photoBusy) { teardown(); begin(); }
 };
 focusMode.onchange = async () => {
-    const track = stream?.getVideoTracks()[0]; if (!track || photoBusy || starting) return;
+    const track = stream?.getVideoTracks()[0]; if (!track || photoBusy || starting || commandBusy) return;
     preferences.focus = focusMode.value; savePreferences();
     if (preferences.focus === 'auto') { teardown(); begin(); return; }
     showCameraSettings(track);
@@ -260,7 +255,7 @@ focusMode.onchange = async () => {
 };
 focusDistance.oninput = () => { document.querySelector('#focus-value').textContent = Number(focusDistance.value).toFixed(3); };
 focusDistance.onchange = async () => {
-    const track = stream?.getVideoTracks()[0]; if (!track || photoBusy || starting) return;
+    const track = stream?.getVideoTracks()[0]; if (!track || photoBusy || starting || commandBusy) return;
     const changes = { focusDistance: Number(focusDistance.value) };
     if (track.getCapabilities().focusMode?.includes('manual')) changes.focusMode = 'manual';
     try { await applyVerified(track, changes); preferences.distance = changes.focusDistance; savePreferences(); showCameraSettings(track); }
@@ -272,34 +267,57 @@ document.querySelector('#refocus').onclick = () => {
 };
 zoom.oninput = () => { document.querySelector('#zoom-value').textContent = Number(zoom.value).toFixed(1) + '×'; };
 zoom.onchange = async () => {
-    const track = stream?.getVideoTracks()[0]; if (!track || photoBusy || starting) return;
+    const track = stream?.getVideoTracks()[0]; if (!track || photoBusy || starting || commandBusy) return;
     try { await applyVerified(track, { zoom: Number(zoom.value) }); preferences.zoom = Number(zoom.value); savePreferences(); showCameraSettings(track); }
     catch (error) { document.querySelector('#zoom-status').textContent = errorText(error); }
 };
 async function uploadPhoto(blob, source) {
     photoStatus.textContent = '正在处理并传送原始照片…';
     const photo = await preparePhoto(blob);
-    const response = await fetch('/api/photo?source=' + source, { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: photo.jpeg });
+    const response = await fetch('/api/photo?source=' + source, { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: photo.jpeg, signal: AbortSignal.timeout(15000) });
     if (!response.ok) throw new Error('照片上传失败：' + response.status);
     photoStatus.textContent = '已传到电脑：' + photo.width + '×' + photo.height +
         (photo.width * photo.height <= 1920 * 1080 ? '；照片像素未超过 1080p，可尝试“系统相机拍照”。' : '；电脑可放大、复制或保存。');
 }
 async function captureHD() {
-    const track = stream?.getVideoTracks()[0]; if (!track || photoBusy) return;
+    const track = stream?.getVideoTracks()[0]; if (!track || photoBusy || starting) throw new Error('请等待实时视频恢复后再抓拍');
     photoBusy = true; hdButton.disabled = quality.disabled = focusMode.disabled = focusDistance.disabled = zoom.disabled = true;
-    photoStatus.textContent = '正在触发相机拍照…';
-    try { await uploadPhoto(await takePhoto(track), 'camera-photo'); }
-    catch (error) { photoStatus.textContent = errorText(error) + '。也可点“系统相机拍照”。'; }
+    photoStatus.textContent = '正在切换高分辨率采集，实时视频会暂时暂停…';
+    const deviceId = track.getSettings().deviceId;
+    teardown();
+    const gen = generation;
+    try {
+        const request = navigator.mediaDevices.getUserMedia({ audio: false, video: {
+            ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: 'environment' } }),
+            width: { ideal: 3840 }, height: { ideal: 2160 }, frameRate: { ideal: 15, max: 15 }
+        }}).then(media => {
+            if (gen !== generation) { media.getTracks().forEach(t => t.stop()); throw new Error('抓拍已取消'); }
+            return media;
+        });
+        stream = await deadline(request, 12000, '高分辨率相机打开超时');
+        camera.srcObject = stream;
+        await deadline(camera.play(), 5000, '高清画面未就绪');
+        const hdTrack = stream.getVideoTracks()[0];
+        const caps = hdTrack.getCapabilities?.() || {}, changes = {};
+        if (adjustable(caps.zoom) && Number.isFinite(preferences.zoom)) changes.zoom = preferences.zoom;
+        if (preferences.focus === 'manual' && adjustable(caps.focusDistance) && Number.isFinite(preferences.distance)) {
+            changes.focusDistance = preferences.distance;
+            if (caps.focusMode?.includes('manual')) changes.focusMode = 'manual';
+        }
+        if (Object.keys(changes).length) await deadline(applyVerified(hdTrack, changes), 5000, '抓拍相机设置超时');
+        await uploadPhoto(await highResolutionPhoto(camera), 'hd-frame');
+    }
+    catch (error) { photoStatus.textContent = '抓拍失败，未生成新照片：' + errorText(error) + '。可在手机使用“系统相机拍照”。'; throw error; }
     finally {
+        teardown();
         photoBusy = false; hdButton.disabled = !running; quality.disabled = starting; focusDistance.disabled = false;
-        if (running) showCameraSettings(stream.getVideoTracks()[0]);
         lastOutput = performance.now(); forceKey = true;
-        if (wanted && !running) begin();
+        if (wanted) await begin();
     }
 }
-hdButton.onclick = captureHD;
+hdButton.onclick = () => captureHD().catch(() => {});
 document.querySelector('#system-photo').onclick = () => {
-    if (photoBusy || starting) return;
+    if (photoBusy || starting || commandBusy) return;
     photoStatus.textContent = '请用系统相机拍照并确认；取消后恢复实时画面。';
     photoBusy = systemPicker = true; teardown(); photoFile.value = ''; photoFile.click();
 };
@@ -308,7 +326,7 @@ async function finishSystemPhoto() {
     systemPicker = false;
     try { if (photoFile.files?.[0]) await uploadPhoto(photoFile.files[0], 'system-camera'); }
     catch (error) { photoStatus.textContent = errorText(error); }
-    finally { photoBusy = false; if (wanted) begin(); }
+    finally { if (!photoFile.files?.[0]) photoStatus.textContent = '已取消拍照，未生成新照片'; photoBusy = false; if (wanted) begin(); }
 }
 photoFile.onchange = finishSystemPhoto;
 photoFile.addEventListener('cancel', finishSystemPhoto);
@@ -337,8 +355,71 @@ async function init() {
         }
         const response = await fetch('/api/paired');
         if (!response.ok) throw new Error('请扫描电脑 DeskCam 的“连接手机”二维码');
+        pairedReady = true;
         button.disabled = false;
         wanted = true; await begin();
     } catch (error) { setStatus(errorText(error)); button.disabled = false; }
 }
 init();
+
+function cameraState() {
+    const track = stream?.getVideoTracks()[0], s = track?.getSettings() || {}, c = track?.getCapabilities?.() || {};
+    return { quality: preferences.quality, focus: preferences.focus, busy: photoBusy || starting || commandBusy,
+        ready: running, zoomRange: c.zoom || null, focusRange: c.focusDistance || null, canLock: c.focusMode?.includes('none') || false,
+        settings: { width:s.width,height:s.height,zoom:s.zoom,focusDistance:s.focusDistance,focusMode:s.focusMode },
+        photoStatus: photoStatus.textContent };
+}
+async function executeCommand(command) {
+    commandBusy = true;
+    try {
+        if (photoBusy || starting || !running) throw new Error('手机忙碌或视频未开始，请稍后重试');
+        const track = stream.getVideoTracks()[0], caps = track.getCapabilities?.() || {};
+        if (command.kind === 'photo') await captureHD();
+        else if (command.kind === 'quality') {
+            if (!Object.hasOwn(qualities, command.text)) throw new Error('未知清晰度');
+            preferences.quality = command.text; quality.value = command.text; savePreferences();
+            teardown(); await begin();
+            if (!running) throw new Error(status.textContent);
+        } else if (command.kind === 'refocus' || command.kind === 'focus' && command.text === 'auto') {
+            preferences.focus = 'auto'; preferences.distance = null; savePreferences(); teardown(); await begin();
+            if (!running) throw new Error(status.textContent);
+            const current = stream.getVideoTracks()[0].getSettings().focusMode;
+            if (current && current !== 'continuous' && current !== 'single-shot') throw new Error('手机实际对焦模式仍为 ' + current + '，未确认自动模式生效');
+        } else {
+            const changes = {};
+            if (command.kind === 'zoom') {
+                if (!adjustable(caps.zoom) || command.value < caps.zoom.min || command.value > caps.zoom.max) throw new Error('倍率不在手机支持范围');
+                changes.zoom = command.value;
+            } else if (command.kind === 'distance' || command.kind === 'focus' && command.text === 'manual') {
+                if (!adjustable(caps.focusDistance)) throw new Error('手机未开放手动调焦');
+                changes.focusDistance = command.kind === 'distance' ? command.value : track.getSettings().focusDistance ?? caps.focusDistance.min;
+                if (caps.focusMode?.includes('manual')) changes.focusMode = 'manual';
+            } else if (command.kind === 'focus' && command.text === 'none' && caps.focusMode?.includes('none')) changes.focusMode = 'none';
+            else throw new Error('手机不支持此项操作');
+            await deadline(applyVerified(track, changes), 5000, '相机设置超时');
+            if ('zoom' in changes) preferences.zoom = changes.zoom;
+            if ('focusDistance' in changes) { preferences.focus = 'manual'; preferences.distance = changes.focusDistance; }
+            if (changes.focusMode === 'none') preferences.focus = 'none';
+            savePreferences(); showCameraSettings(track);
+        }
+        commandResult = command.kind === 'photo' ? photoStatus.textContent : '设置已应用；上方显示手机返回的实际值';
+    } catch (error) { commandResult = '操作失败：' + errorText(error); }
+    finally { commandAck = command.id; commandBusy = false; }
+}
+async function syncCamera() {
+    if (!pairedReady || document.hidden || syncBusy) return;
+    syncBusy = true;
+    const ack = commandAck;
+    try {
+        const response = await fetch('/api/camera/sync', { method:'POST', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({state:cameraState(),ack,message:commandResult}), signal:AbortSignal.timeout(3000) });
+        if (!response.ok) return;
+        const {command} = await response.json();
+        if (commandAck === ack) commandAck = 0;
+        if (command) {
+            if (commandBusy) { commandAck = command.id; commandResult = '操作失败：手机仍在处理上一项操作'; }
+            else executeCommand(command);
+        }
+    } catch {} finally { syncBusy = false; }
+}
+setInterval(syncCamera, 700);

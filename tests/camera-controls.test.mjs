@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { adjustable, applyVerified, takePhoto, preparePhoto } from '../src/LocalCam.Server/Web/camera-controls.mjs';
+import { adjustable, applyVerified, preparePhoto, deadline, highResolutionPhoto } from '../src/LocalCam.Server/Web/camera-controls.mjs';
 
 test('ignored zoom and missing focus readback are not reported as working', async () => {
     const track = { applyConstraints: async () => {}, getSettings: () => ({ zoom: 1 }), getCapabilities: () => ({}) };
@@ -16,17 +16,6 @@ test('manual focus works without a focusMode capability when distance is applied
         getCapabilities: () => ({ focusDistance: { min: 0, max: 1, step: .01 } }) };
     assert.equal((await applyVerified(track, { focusDistance: .4 })).focusDistance, .4);
 });
-test('photo requests maximum still size and retries only unsupported size options', async () => {
-    const calls = [];
-    globalThis.ImageCapture = class {
-        async getPhotoCapabilities() { return { imageWidth: { max: 4000 }, imageHeight: { max: 3000 } }; }
-        async takePhoto(options) { calls.push(options); if (options) throw Object.assign(new Error(), { name: 'NotSupportedError' }); return 'photo'; }
-    };
-    assert.equal(await takePhoto({}), 'photo');
-    assert.deepEqual(calls, [{ imageWidth: 4000, imageHeight: 3000 }, undefined]);
-    delete globalThis.ImageCapture;
-    await assert.rejects(takePhoto({}), /系统相机/);
-});
 test('photo normalization never invents resolution and bounds large images', async () => {
     let closed = 0;
     globalThis.document = { createElement: () => ({ getContext: () => ({ drawImage() {} }), toBlob: cb => cb('jpeg') }) };
@@ -37,4 +26,16 @@ test('photo normalization never invents resolution and bounds large images', asy
         if (width * height <= 16000000) assert.deepEqual([photo.width, photo.height], [width, height]);
     }
     assert.equal(closed, 3);
+});
+
+
+test('camera operations time out instead of hanging controls', async () => {
+    await assert.rejects(deadline(new Promise(() => {}), 10, 'timed out'), /timed out/);
+});
+test('HD frame rejects 1080p and keeps native 4K dimensions', async () => {
+    globalThis.document = { createElement: () => ({ getContext: () => ({ drawImage() {} }), toBlob: cb => cb('jpeg') }) };
+    const video = { videoWidth:1920, videoHeight:1080, requestVideoFrameCallback: cb => setTimeout(cb, 460), cancelVideoFrameCallback: clearTimeout };
+    await assert.rejects(highResolutionPhoto(video), /未达到/);
+    video.videoWidth = 3840; video.videoHeight = 2160;
+    assert.equal(await highResolutionPhoto(video), 'jpeg');
 });

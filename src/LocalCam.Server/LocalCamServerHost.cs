@@ -11,6 +11,7 @@ public sealed class LocalCamServerInstance(WebApplication application, FrameRela
 {
     public FrameRelay Relay { get; } = relay;
     public PhotoStore Photos { get; } = new();
+    public CameraControlStore Camera { get; } = new();
     public Func<byte[]?>? Snapshot { get; set; }
     public Func<object>? VideoStatus { get; set; }
     public Task WaitForShutdownAsync(CancellationToken ct = default) => application.WaitForShutdownAsync(ct);
@@ -126,10 +127,19 @@ public static class LocalCamServerHost
             return bytes is null ? Results.StatusCode(503) : Results.File(bytes, "image/jpeg");
         });
         int photoUpload = 0;
+        app.MapPost("/api/camera/sync", async (HttpContext c) =>
+        {
+            if (!c.Request.IsHttps || !SameOrigin(c) || !devices.Validate(c.Request.Cookies["deskcam"])) return Results.StatusCode(403);
+            if (c.Request.ContentLength is not > 0 or > 16384) return Results.BadRequest();
+            var request = await c.Request.ReadFromJsonAsync<CameraSync>(c.RequestAborted);
+            if (request is null || request.State.ValueKind != System.Text.Json.JsonValueKind.Object) return Results.BadRequest();
+            return Results.Json(new { command = instance.Camera.Exchange(request.State, request.Ack, request.Message) });
+        });
         app.MapPost("/api/photo/request", (HttpContext c) =>
         {
             if (!IsLocal(c) || c.Request.Headers.ContainsKey("Origin")) return Results.NotFound();
-            return !relay.IsPhoneConnected ? Results.Conflict("请先打开手机 DeskCam") : Results.Json(new { id = instance.Photos.Request() });
+            try { return Results.Json(instance.Camera.Request("photo")); }
+            catch (InvalidOperationException ex) { return Results.Conflict(ex.Message); }
         });
         app.MapGet("/api/photo/request", (HttpContext c) =>
             !c.Request.IsHttps || !devices.Validate(c.Request.Cookies["deskcam"]) ? Results.StatusCode(403) :
@@ -147,7 +157,7 @@ public static class LocalCamServerHost
                     if (data.Length + read > PhotoStore.MaximumBytes) return Results.StatusCode(413);
                     data.Write(buffer, 0, read);
                 }
-                var source = c.Request.Query["source"] == "system-camera" ? "system-camera" : "camera-photo";
+                var source = c.Request.Query["source"].ToString() switch { "system-camera" => "system-camera", "hd-frame" => "hd-frame", _ => "camera-photo" };
                 var photo = instance.Photos.Accept(data.ToArray(), source);
                 return Results.Json(new { photo.Sequence, photo.Width, photo.Height });
             }
@@ -168,4 +178,5 @@ public static class LocalCamServerHost
     private static bool SameOrigin(HttpContext c) => Uri.TryCreate(c.Request.Headers.Origin, UriKind.Absolute, out var origin)
         && origin.Scheme == "https" && origin.Authority.Equals(c.Request.Host.Value, StringComparison.OrdinalIgnoreCase);
     private sealed record PairRequest(string Session, string Token);
+    private sealed record CameraSync(System.Text.Json.JsonElement State, long Ack, string? Message);
 }
