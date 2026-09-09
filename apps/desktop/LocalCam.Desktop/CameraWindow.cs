@@ -17,7 +17,7 @@ internal sealed class CameraWindow : Window
     private readonly Slider zoom = new(), distance = new();
     private readonly TextBlock actual = new(), status = new(), zoomValue = new(), distanceValue = new();
     private readonly Button qualityApply = new(), zoomApply = new(), focusApply = new(), distanceApply = new(), refocus = new();
-    private bool initialized;
+    private bool initialized, wasPending;
     public CameraWindow(CameraControlStore store)
     {
         this.store = store; Title = "DeskCam · 相机控制"; Width = 480; Height = 660; MinWidth = 420; MinHeight = 540;
@@ -71,6 +71,8 @@ internal sealed class CameraWindow : Window
     private void Refresh()
     {
         var snapshot = store.Snapshot;
+        bool synchronize = !initialized || wasPending && !snapshot.Pending;
+        wasPending = snapshot.Pending;
         bool fresh = DateTimeOffset.UtcNow - snapshot.UpdatedAt < TimeSpan.FromSeconds(5);
         bool enabled = fresh && !snapshot.Pending;
         foreach (var button in new[] { qualityApply,zoomApply,focusApply,distanceApply,refocus }) button.IsEnabled = enabled;
@@ -80,10 +82,10 @@ internal sealed class CameraWindow : Window
         if (!state.TryGetProperty("ready",out var ready) || ready.ValueKind != JsonValueKind.True) enabled = false;
         var settings = state.GetProperty("settings");
         actual.Text = $"实际画面 {Number(settings,"width")}×{Number(settings,"height")} · 倍率 {Number(settings,"zoom")?.ToString("F2") ?? "未返回"}×\n实际对焦模式 {Text(settings,"focusMode") ?? "系统管理"} · 焦点 {Number(settings,"focusDistance")?.ToString("F3") ?? "未返回"}";
-        if (!initialized && fresh && Number(settings,"width") is not null)
+        if (synchronize && fresh && Number(settings,"width") is not null)
         { Select(quality,Text(state,"quality")); Select(focus,Text(state,"focus")); }
-        bool zoomAvailable = Range(state,"zoomRange",zoom,!initialized,Number(settings,"zoom"));
-        bool focusAvailable = Range(state,"focusRange",distance,!initialized,Number(settings,"focusDistance"));
+        bool zoomAvailable = Range(state,"zoomRange",zoom,synchronize,Number(settings,"zoom"));
+        bool focusAvailable = Range(state,"focusRange",distance,synchronize,Number(settings,"focusDistance"));
         zoom.IsEnabled = zoomApply.IsEnabled = enabled && zoomAvailable;
         distance.IsEnabled = distanceApply.IsEnabled = enabled && focusAvailable;
         if (!zoomAvailable) zoomValue.Text = "手机未开放相机倍率";

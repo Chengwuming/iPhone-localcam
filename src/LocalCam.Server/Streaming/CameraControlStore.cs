@@ -36,7 +36,9 @@ public sealed class CameraControlStore
     {
         lock (gate)
         {
-            Expire(); state = current.Clone(); updated = DateTimeOffset.UtcNow;
+            Expire();
+            if (state is null) result = "相机已同步；可以在电脑调整";
+            state = current.Clone(); updated = DateTimeOffset.UtcNow;
             if (ack != 0 && ack == outstanding) { outstanding = 0; result = message ?? "操作完成"; }
             var command = pending; pending = null; return command;
         }
