@@ -1,7 +1,7 @@
 <Window x:Class="LocalCam.Desktop.MainWindow"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
- Title="DeskCam" Icon="/Assets/LocalCam.ico" Width="1000" Height="700" MinWidth="460" MinHeight="320"
+ Title="DeskCam" Icon="/Assets/LocalCam.ico" Width="1000" Height="700" MinWidth="460" MinHeight="460"
  Background="#111614" Foreground="#ECF4EF" FontFamily="Segoe UI" KeyDown="Window_KeyDown">
  <Window.Resources>
   <Style TargetType="Button"><Setter Property="Background" Value="#29392F"/><Setter Property="Foreground" Value="#EDF6EF"/>
@@ -47,7 +47,8 @@
     <Button Content="高清抓拍 H" Click="CaptureHD_Click" ToolTip="获取完整高清采集帧；4K 档位无需重开相机"/>
     <Button Content="纯净 F11" Click="Clean_Click" ToolTip="隐藏界面截图；Esc 或双击画面退出"/>
    </WrapPanel>
-   <WrapPanel>
+   <Expander x:Name="SecondaryActions" Header="画面调整与帮助" IsExpanded="True" Foreground="#9CAD9F">
+   <WrapPanel Margin="0,7,0,0">
     <Button Content="旋转 R" Click="Rotate_Click"/><Button x:Name="CropButton" Content="裁剪 C" Click="Crop_Click"/>
     <Button Content="重置 0" Click="Reset_Click"/>
     <Button x:Name="TopButton" Content="置顶" Click="Top_Click"/>
@@ -57,6 +58,7 @@
     <Button x:Name="InspectButton" Content="细字检查 I" Click="Inspect_Click"/>
     <Button Content="使用帮助 F1" Click="Help_Click"/>
    </WrapPanel>
+   </Expander>
    <TextBlock x:Name="StatusText" Foreground="#9CAD9F" FontSize="12" TextWrapping="Wrap" Margin="0,10,0,0" Text="等待手机"/>
    <TextBlock x:Name="CaptureText" Foreground="#B9EDCF" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
    <Expander Header="摄像头兼容状态" Foreground="#829689" FontSize="11" Margin="0,4,0,0"><TextBlock x:Name="CameraText" TextWrapping="Wrap"/></Expander>

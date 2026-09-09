@@ -85,7 +85,6 @@ public partial class MainWindow : Window
     }
     private void Tick()
     {
-        FocusLockButton.IsEnabled = AutofocusButton.IsEnabled = false;
         if (camera?.Snapshot is { } cameraState)
         {
             bool ready = DateTimeOffset.UtcNow-cameraState.UpdatedAt<TimeSpan.FromSeconds(3) && !cameraState.Pending &&
@@ -107,6 +106,7 @@ public partial class MainWindow : Window
             try { ShowPhoto(photo); }
             catch (Exception ex) { StatusText.Text = "照片打开失败：" + ex.Message; }
         }
+        if(camera is null)FocusLockButton.IsEnabled=AutofocusButton.IsEnabled=false;
         CaptureText.Visibility = camera?.Snapshot.Pending==true || photos?.Latest is not null || CaptureText.Text.Contains("失败") ? Visibility.Visible : Visibility.Collapsed;
         using var live = pipeline?.Acquire();
         var frame = frozen ?? live;
@@ -186,7 +186,7 @@ public partial class MainWindow : Window
         if(show&&ActualWidth<850)Width=Math.Min(1000,SystemParameters.WorkArea.Width);
         UpdateSidebar();
     }
-    private void UpdateSidebar()=>CameraSidebar.Visibility=!clean&&settings.Current.CameraSidebar&&ActualWidth>=850?Visibility.Visible:Visibility.Collapsed;
+    private void UpdateSidebar(){CameraSidebar.Visibility=!clean&&settings.Current.CameraSidebar&&ActualWidth>=850?Visibility.Visible:Visibility.Collapsed;SecondaryActions.IsExpanded=ActualWidth>=700;}
     private void Inspect_Click(object sender,RoutedEventArgs e){inspecting=!inspecting;InspectBox.Visibility=inspecting&&!clean?Visibility.Visible:Visibility.Collapsed;InspectButton.Content=inspecting?"关闭细字检查 I":"细字检查 I";}
     private void ShowPhoto(CapturedPhoto photo){photoWindow?.Close();photoWindow=new PhotoWindow(photo){Owner=this};photoWindow.Closed+=(_,_)=>photoWindow=null;Show();photoWindow.Show();}
     private void RecentPhoto_Click(object sender,RoutedEventArgs e){if(photos?.Latest is {} photo)ShowPhoto(photo);else{StatusText.Text="还没有成功抓拍的图片";statusTick=Stopwatch.GetTimestamp()+Stopwatch.Frequency*3;}}
