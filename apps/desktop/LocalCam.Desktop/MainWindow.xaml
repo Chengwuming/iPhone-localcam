@@ -17,7 +17,7 @@
    <TextBlock Text="DeskCam" FontSize="22" FontWeight="SemiBold"/>
   </DockPanel>
   <Grid Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-  <Grid x:Name="Viewport" Background="#080B09" ClipToBounds="True"
+  <Grid x:Name="Viewport" Focusable="True" Background="#080B09" ClipToBounds="True"
     MouseWheel="Viewport_MouseWheel" MouseLeftButtonDown="Viewport_MouseDown"
     MouseMove="Viewport_MouseMove" MouseLeftButtonUp="Viewport_MouseUp">
    <Image x:Name="PreviewImage" Stretch="Uniform"/>

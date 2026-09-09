@@ -219,13 +219,13 @@ public partial class MainWindow : Window
     }
     private void Window_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
-        if(CameraSidebar.IsKeyboardFocusWithin)return;
         if (e.Key == Key.C && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) Copy();
+        else if (e.Key == Key.F11 || (e.Key == Key.Escape && clean)) Clean();
+        else if (CameraSidebar.IsKeyboardFocusWithin) return;
         else if (e.Key == Key.C) ToggleCrop();
         else if (e.Key == Key.R) Rotate();
         else if (e.Key is Key.D0 or Key.NumPad0) Reset();
         else if (e.Key == Key.Space) Freeze();
-        else if (e.Key == Key.F11 || (e.Key == Key.Escape && clean)) Clean();
         else return;
         e.Handled = true;
     }
@@ -254,6 +254,7 @@ public partial class MainWindow : Window
     private void Viewport_MouseDown(object sender, MouseButtonEventArgs e)
     {
         if (PreviewImage.Source is null || pipeline is null) return;
+        Viewport.Focus();
         if (clean && e.ClickCount == 2) { Clean(); return; }
         Resume(); dragging = true; dragStart = e.GetPosition(Viewport); dragTransform = pipeline.Transform;
         Viewport.CaptureMouse();
