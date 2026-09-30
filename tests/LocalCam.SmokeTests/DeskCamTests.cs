@@ -1,6 +1,11 @@
 using System.Buffers.Binary;
 using LocalCam.Server.Pairing;
 using LocalCam.Server.Streaming;
+using LocalCam.Server.Network;
+using LocalCam.Server.Security;
+using System.Net;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 
 internal static class DeskCamTests
 {
@@ -32,6 +37,29 @@ internal static class DeskCamTests
         var path = Path.Combine(Path.GetTempPath(), "deskcam-test-" + Guid.NewGuid().ToString("N"));
         try
         {
+            Assert(ConnectionAddressProvider.LoadForwardedAddress(path) is null, "Missing forwarded configuration changed LAN behavior");
+            Directory.CreateDirectory(path);
+            var forwardedPath = Path.Combine(path, ConnectionAddressProvider.ForwardedAddressFile);
+            File.WriteAllText(forwardedPath, "59.66.26.53\n");
+            var forwarded = ConnectionAddressProvider.LoadForwardedAddress(path)!;
+            Assert(forwarded.Equals(IPAddress.Parse("59.66.26.53")), "Forwarded IP configuration lost");
+            var endpoints = ConnectionAddressProvider.GetAddresses(forwarded);
+            Assert(endpoints[0].IsForwarded && endpoints[0].Address.Equals(forwarded), "Router entry mislabeled or missing");
+            foreach (var invalidAddress in new[] { "https://59.66.26.53", "59.66.26.53:29101", "127.0.0.1", "::1", "0.0.0.0", "224.0.0.1", "169.254.1.2" })
+            {
+                File.WriteAllText(forwardedPath, invalidAddress);
+                try { ConnectionAddressProvider.LoadForwardedAddress(path); throw new Exception("Invalid forwarded address accepted"); }
+                catch (InvalidDataException) { }
+            }
+            var ca = new LocalCertificateAuthority(Path.Combine(path, "certificates"));
+            using var firstLeaf = ca.CreateServerCertificate([forwarded]);
+            var authorityHash = SHA256.HashData(File.ReadAllBytes(ca.PublicCertificatePath));
+            using var secondLeaf = ca.CreateServerCertificate([forwarded]);
+            Assert(authorityHash.SequenceEqual(SHA256.HashData(File.ReadAllBytes(ca.PublicCertificatePath))), "New server leaf replaced trusted CA");
+            var rawSan = secondLeaf.Extensions.First(extension => extension.Oid?.Value == "2.5.29.17");
+            var san = new X509SubjectAlternativeNameExtension(rawSan.RawData, rawSan.Critical);
+            Assert(san.EnumerateIPAddresses().Contains(forwarded), "Router WAN address missing from TLS SAN");
+            Assert(secondLeaf.Extensions.Any(extension => extension.Oid?.Value == "2.5.29.35"), "Authority key identifier missing");
             var store = new DeviceStore(path);
             var token = store.Pair();
             Assert(store.Validate(token), "New pairing failed");

@@ -32,7 +32,7 @@ public partial class PairingWindow : Window
             NetworkSelector.ItemsSource = networks;
             NetworkSelector.SelectedItem = networks.FirstOrDefault(network => network.IsRecommended) ?? networks.FirstOrDefault();
 
-            MobileHotspotHint.Text = "选择手机可以直接访问的电脑 IPv4。校园网不需要广播发现；Tailscale、Clash 等虚拟网卡已排除。";
+            MobileHotspotHint.Text = "选择手机可以访问的入口。路由器校园网入口只需 TCP 29101 转发到电脑；证书安装页保留在内网。Tailscale、Clash 等虚拟网卡已排除。";
         }
         catch (Exception exception)
         {

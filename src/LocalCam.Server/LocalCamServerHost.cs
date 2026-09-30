@@ -27,7 +27,8 @@ public static class LocalCamServerHost
         // Integration tests use a separate credential/certificate store, preserving the paired phone.
         var dataDirectory = Environment.GetEnvironmentVariable("DESKCAM_DATA_DIR") ??
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LocalCam");
-        var addresses = LocalNetworkAddressProvider.GetUsableIPv4Addresses()
+        var forwardedAddress = ConnectionAddressProvider.LoadForwardedAddress(dataDirectory);
+        var addresses = ConnectionAddressProvider.GetAddresses(forwardedAddress).Select(route => route.Address)
             .Append(LocalNetworkAddressProvider.WindowsMobileHotspotDefaultAddress).Distinct().ToArray();
         var ca = new LocalCertificateAuthority(Path.Combine(dataDirectory, "certificates"));
         var certificate = ca.CreateServerCertificate(addresses);
@@ -52,23 +53,25 @@ public static class LocalCamServerHost
             context.Response.Headers["Referrer-Policy"] = "no-referrer";
             await next();
         });
-        string? Preferred() => LocalNetworkAddressProvider.GetUsableRoutes().FirstOrDefault(r => r.Address.ToString() == preferred)?.Address.ToString()
-            ?? LocalNetworkAddressProvider.GetPreferredRoute()?.Address.ToString();
+        IReadOnlyList<ConnectionAddress> Connections() => ConnectionAddressProvider.GetAddresses(forwardedAddress);
+        string? Preferred() => Connections().FirstOrDefault(r => r.Address.ToString() == preferred)?.Address.ToString()
+            ?? Connections().FirstOrDefault()?.Address.ToString();
         app.MapGet("/", (HttpContext c) => c.Request.IsHttps ? Results.Redirect("/phone") : Results.Content(WebPages.Bootstrap, "text/html; charset=utf-8"));
         app.MapGet("/certificate/localcam-ca.cer", () => Results.File(ca.PublicCertificatePath, "application/x-x509-ca-cert", "LocalCam-Local-CA.cer"));
         app.MapGet("/api/networks", (HttpContext c) => !IsLocal(c) ? Results.NotFound() :
-            Results.Json(LocalNetworkAddressProvider.GetUsableRoutes().Select(r => new
+            Results.Json(Connections().Select(r => new
             {
-                address = r.Address.ToString(), name = r.Name, connectionType = LocalNetworkAddressProvider.GetConnectionType(r),
+                address = r.Address.ToString(), name = r.Name, connectionType = r.ConnectionType,
                 isWindowsMobileHotspot = r.IsWindowsMobileHotspot, isPhoneWifiHotspot = r.IsPhoneWifiHotspot,
+                isForwarded = r.IsForwarded,
                 isRecommended = r.Address.ToString() == Preferred()
             })));
         app.MapGet("/api/session", (HttpContext c) =>
         {
             if (!IsLocal(c)) return Results.NotFound();
             var requested = c.Request.Query["address"].ToString();
-            var route = LocalNetworkAddressProvider.GetUsableRoutes().FirstOrDefault(r => r.Address.ToString() == requested)
-                ?? LocalNetworkAddressProvider.GetUsableRoutes().FirstOrDefault(r => r.Address.ToString() == Preferred());
+            var route = Connections().FirstOrDefault(r => r.Address.ToString() == requested)
+                ?? Connections().FirstOrDefault(r => r.Address.ToString() == Preferred());
             if (route is null) return Results.BadRequest("未找到手机可达的 IPv4 网卡。");
             preferred = route.Address.ToString();
             Directory.CreateDirectory(dataDirectory);
@@ -77,12 +80,17 @@ public static class LocalCamServerHost
             var session = daily ? null : pairing.Create();
             var dailyUrl = $"https://{route.Address}:{HttpsPort}/phone";
             var phoneUrl = session is null ? dailyUrl : dailyUrl + $"#session={session.Id}&token={session.Token}";
-            var bootstrapUrl = $"http://{route.Address}:{BootstrapPort}/";
+            // A forwarded entry needs only HTTPS/WSS. Keep CA installation on a LAN
+            // address instead of suggesting that the user expose the bootstrap port.
+            var bootstrapAddress = route.IsForwarded
+                ? LocalNetworkAddressProvider.GetPreferredRoute()?.Address.ToString() ?? "127.0.0.1"
+                : route.Address.ToString();
+            var bootstrapUrl = $"http://{bootstrapAddress}:{BootstrapPort}/";
             return Results.Json(new
             {
                 phoneUrl, phoneQr = QrCodeRenderer.RenderDataUrl(phoneUrl),
                 bootstrapUrl, bootstrapQr = QrCodeRenderer.RenderDataUrl(bootstrapUrl),
-                connectionName = route.Name, connectionType = LocalNetworkAddressProvider.GetConnectionType(route), expiresAt = session?.ExpiresAt, dailyUrl, daily,
+                connectionName = route.Name, connectionType = route.ConnectionType, expiresAt = session?.ExpiresAt, dailyUrl, daily,
                 certificateId = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(ca.PublicCertificatePath)))
             });
         });

@@ -30,6 +30,8 @@ public sealed class LocalCertificateAuthority
         request.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, true));
         request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment, true));
         request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension([new Oid("1.3.6.1.5.5.7.3.1")], true));
+        request.CertificateExtensions.Add(X509AuthorityKeyIdentifierExtension.CreateFromCertificate(
+            authority, includeKeyIdentifier: true, includeIssuerAndSerial: false));
 
         var subjectAlternativeNames = new SubjectAlternativeNameBuilder();
         subjectAlternativeNames.AddDnsName("localhost");
